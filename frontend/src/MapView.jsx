@@ -9,6 +9,16 @@ const SOCKET_URL = "http://localhost:5000";
 const API_URL = "http://localhost:5000/api/territories";
 const USER_API_URL = "http://localhost:5000/api/users";
 
+// Utility: assign a color to a username (consistent, readable)
+function userColor(username, isSelf) {
+  if (isSelf) return "#2563eb"; // blue for logged-in user
+  // hash to color palette
+  const colors = ["#f59e42", "#10b981", "#e11d48", "#fbbf24", "#6366f1", "#14b8a6", "#7c3aed", "#fb7185", "#84cc16", "#f472b6"];
+  let hash = 0;
+  for (let i = 0; i < username.length; i++) hash = username.charCodeAt(i) + ((hash << 5) - hash);
+  return colors[Math.abs(hash) % colors.length];
+}
+
 export default function MapView({ token, username }) {
   const [position, setPosition] = useState([51.505, -0.09]); // Default: London
   const [hasLocation, setHasLocation] = useState(false);
@@ -109,13 +119,21 @@ export default function MapView({ token, username }) {
             </Marker>
           )}
           {territories.map((t, i) => (
-            <Marker key={t._id || i} position={[t.latitude, t.longitude]} id={`territory-marker-${i}-1`}>
-              <Popup id={`territory-popup-${i}-1`}>{t.user} claimed here</Popup>
-            </Marker>
+            <CircleMarker
+              key={t._id || i}
+              center={[t.latitude, t.longitude]}
+              radius={12}
+              pathOptions={{ color: userColor(t.user, t.user === username), fillOpacity: 0.5 }}
+              id={`territory-circle-marker-${i}`}
+            >
+              <Popup id={`territory-popup-${i}-1`}>
+                {t.user} claimed here
+              </Popup>
+            </CircleMarker>
           ))}
           {profileUser && profileTerritories.map((t, i) => (
             <CircleMarker
-              key={t._id || i}
+              key={t._id || i + "-profile"}
               center={[t.latitude, t.longitude]}
               radius={15}
               pathOptions={{ color: t.user === username ? '#2563eb' : '#f59e42', fillOpacity: 0.3 }}
