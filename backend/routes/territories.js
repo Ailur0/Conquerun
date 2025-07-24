@@ -1,12 +1,14 @@
 const express = require('express');
 const Territory = require('../models/Territory');
+const auth = require('../middleware/auth');
 const router = express.Router();
 
 module.exports = (io) => {
-  // Claim a territory
-  router.post('/claim', async (req, res) => {
+  // Claim a territory (protected)
+  router.post('/claim', auth, async (req, res) => {
     try {
-      const { user, latitude, longitude } = req.body;
+      const { latitude, longitude } = req.body;
+      const user = req.user.username;
       if (!user || !latitude || !longitude) {
         return res.status(400).json({ error: 'Missing required fields' });
       }
