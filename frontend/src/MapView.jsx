@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { MapContainer, TileLayer, Marker, Popup, CircleMarker } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import { io } from "socket.io-client";
@@ -12,7 +12,6 @@ const USER_API_URL = "http://localhost:5000/api/users";
 // Utility: assign a color to a username (consistent, readable)
 function userColor(username, isSelf) {
   if (isSelf) return "#2563eb"; // blue for logged-in user
-  // hash to color palette
   const colors = ["#f59e42", "#10b981", "#e11d48", "#fbbf24", "#6366f1", "#14b8a6", "#7c3aed", "#fb7185", "#84cc16", "#f472b6"];
   let hash = 0;
   for (let i = 0; i < username.length; i++) hash = username.charCodeAt(i) + ((hash << 5) - hash);
@@ -20,7 +19,7 @@ function userColor(username, isSelf) {
 }
 
 export default function MapView({ token, username }) {
-  const [position, setPosition] = useState([51.505, -0.09]); // Default: London
+  const [position, setPosition] = useState([51.505, -0.09]);
   const [hasLocation, setHasLocation] = useState(false);
   const [territories, setTerritories] = useState([]);
   const [leaderboard, setLeaderboard] = useState([]);
@@ -29,6 +28,8 @@ export default function MapView({ token, username }) {
   const [claimError, setClaimError] = useState("");
   const [profileUser, setProfileUser] = useState(null);
   const [profileTerritories, setProfileTerritories] = useState([]);
+  const [animatedClaim, setAnimatedClaim] = useState(null);
+  const pulseRef = useRef();
 
   useEffect(() => {
     if (navigator.geolocation) {
@@ -48,16 +49,39 @@ export default function MapView({ token, username }) {
     socket.on("territoryClaimed", (territory) => {
       setTerritories((prev) => [...prev, territory]);
       setNotification(`Territory claimed by ${territory.user}`);
+      setAnimatedClaim({ ...territory, timestamp: Date.now() });
       setTimeout(() => setNotification(""), 3000);
     });
     socket.on("leaderboardUpdate", (data) => {
       setLeaderboard(data);
     });
-    // Initial fetch
     axios.get(API_URL).then(res => setTerritories(res.data));
     axios.get(API_URL + "/leaderboard").then(res => setLeaderboard(res.data));
     return () => socket.disconnect();
   }, []);
+
+  // Animation effect: clear animatedClaim after 2.5s
+  useEffect(() => {
+    if (!animatedClaim) return;
+    const timer = setTimeout(() => setAnimatedClaim(null), 2500);
+    return () => clearTimeout(timer);
+  }, [animatedClaim]);
+
+  // Animation: pulse radius
+  const [pulseRadius, setPulseRadius] = useState(12);
+  useEffect(() => {
+    if (!animatedClaim) return;
+    let growing = true;
+    pulseRef.current = setInterval(() => {
+      setPulseRadius((r) => {
+        if (growing && r < 30) return r + 2;
+        if (!growing && r > 12) return r - 2;
+        growing = !growing;
+        return r;
+      });
+    }, 50);
+    return () => clearInterval(pulseRef.current);
+  }, [animatedClaim]);
 
   const handleClaim = async () => {
     setClaimLoading(true);
@@ -69,7 +93,6 @@ export default function MapView({ token, username }) {
         { latitude, longitude },
         { headers: { Authorization: `Bearer ${token}` } }
       );
-      // Success: real-time update will be handled by socket.io
     } catch (err) {
       setClaimError(err.response?.data?.error || "Claim failed");
     } finally {
@@ -79,7 +102,6 @@ export default function MapView({ token, username }) {
 
   const handleLeaderboardClick = async (user) => {
     setProfileUser(user);
-    // Fetch user's claimed territories
     try {
       const res = await axios.get(`${USER_API_URL}/${user}/territories`);
       setProfileTerritories(res.data);
@@ -131,6 +153,15 @@ export default function MapView({ token, username }) {
               </Popup>
             </CircleMarker>
           ))}
+          {/* Animated pulse for the latest claim */}
+          {animatedClaim && (
+            <CircleMarker
+              center={[animatedClaim.latitude, animatedClaim.longitude]}
+              radius={pulseRadius}
+              pathOptions={{ color: userColor(animatedClaim.user, animatedClaim.user === username), fillOpacity: 0.15, weight: 4 }}
+              id="animated-claim-pulse"
+            />
+          )}
           {profileUser && profileTerritories.map((t, i) => (
             <CircleMarker
               key={t._id || i + "-profile"}
