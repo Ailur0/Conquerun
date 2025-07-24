@@ -4,6 +4,7 @@ import "leaflet/dist/leaflet.css";
 import { io } from "socket.io-client";
 import axios from "axios";
 import UserProfileModal from "./UserProfileModal";
+import * as turf from "@turf/turf";
 
 const SOCKET_URL = "http://localhost:5000";
 const API_URL = "http://localhost:5000/api/territories";
@@ -227,6 +228,15 @@ export default function MapView({ token, username }) {
           {/* Show all claimed territories as polygons or points */}
           {territories.map((t, i) => {
             if (t.geometry && t.geometry.type === 'Polygon') {
+              // Calculate area (GeoJSON expects [lng, lat])
+              let area = 0, formattedArea = '';
+              try {
+                const geojson = { type: 'Polygon', coordinates: t.geometry.coordinates };
+                area = turf.area(geojson);
+                formattedArea = area > 1000000
+                  ? (area / 1000000).toFixed(2) + ' km²'
+                  : Math.round(area).toLocaleString() + ' m²';
+              } catch (e) { formattedArea = 'N/A'; }
               return (
                 <Polygon
                   key={t._id || i}
@@ -234,7 +244,10 @@ export default function MapView({ token, username }) {
                   pathOptions={{ color: userColor(t.user, t.user === username), fillOpacity: 0.25 }}
                   id={`territory-polygon-${i}`}
                 >
-                  <Popup id={`territory-polygon-popup-${i}`}>{t.user} claimed this area</Popup>
+                  <Popup id={`territory-polygon-popup-${i}`}>
+                    <div id={`territory-polygon-popup-user-${i}`}>{t.user} claimed this area</div>
+                    <div id={`territory-polygon-area-${i}`}>Area: <span id={`territory-area-span-${i}`}>{formattedArea}</span></div>
+                  </Popup>
                 </Polygon>
               );
             } else if (t.geometry && t.geometry.type === 'Point') {
