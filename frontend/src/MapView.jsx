@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from "react";
-import { MapContainer, TileLayer, Marker, Popup, CircleMarker } from "react-leaflet";
+import { MapContainer, TileLayer, Marker, Popup, CircleMarker, Polyline, Polygon } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import { io } from "socket.io-client";
 import axios from "axios";
@@ -18,6 +18,15 @@ function userColor(username, isSelf) {
   return colors[Math.abs(hash) % colors.length];
 }
 
+function distance([lat1, lng1], [lat2, lng2]) {
+  const R = 6371e3; // m
+  const toRad = (deg) => deg * Math.PI / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const a = Math.sin(dLat/2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng/2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+
 export default function MapView({ token, username }) {
   const [position, setPosition] = useState([51.505, -0.09]);
   const [hasLocation, setHasLocation] = useState(false);
@@ -29,7 +38,11 @@ export default function MapView({ token, username }) {
   const [profileUser, setProfileUser] = useState(null);
   const [profileTerritories, setProfileTerritories] = useState([]);
   const [animatedClaim, setAnimatedClaim] = useState(null);
+  const [recording, setRecording] = useState(false);
+  const [path, setPath] = useState([]);
+  const [polygonReady, setPolygonReady] = useState(false);
   const pulseRef = useRef();
+  const watchId = useRef(null);
 
   useEffect(() => {
     if (navigator.geolocation) {
@@ -82,6 +95,77 @@ export default function MapView({ token, username }) {
     }, 50);
     return () => clearInterval(pulseRef.current);
   }, [animatedClaim]);
+
+  // Path recording logic
+  useEffect(() => {
+    if (!recording) {
+      if (watchId.current) {
+        navigator.geolocation.clearWatch(watchId.current);
+        watchId.current = null;
+      }
+      return;
+    }
+    if (navigator.geolocation) {
+      watchId.current = navigator.geolocation.watchPosition(
+        (pos) => {
+          const pt = [pos.coords.latitude, pos.coords.longitude];
+          setPosition(pt);
+          setHasLocation(true);
+          setPath((prev) => {
+            if (prev.length === 0 || distance(prev[prev.length-1], pt) > 5) {
+              return [...prev, pt];
+            }
+            return prev;
+          });
+        },
+        () => setHasLocation(false),
+        { enableHighAccuracy: true, maximumAge: 1000, timeout: 10000 }
+      );
+    }
+    return () => {
+      if (watchId.current) navigator.geolocation.clearWatch(watchId.current);
+    };
+  }, [recording]);
+
+  // Detect if path can be closed (last point near first)
+  useEffect(() => {
+    if (path.length > 3 && distance(path[0], path[path.length-1]) < 20) {
+      setPolygonReady(true);
+    } else {
+      setPolygonReady(false);
+    }
+  }, [path]);
+
+  const handleStartPath = () => {
+    setPath([]);
+    setRecording(true);
+  };
+  const handleStopPath = () => {
+    setRecording(false);
+  };
+  const handleClaimArea = async () => {
+  setClaimLoading(true);
+  setClaimError("");
+  setRecording(false);
+  try {
+    // Close polygon by repeating first point
+    const polygon = [...path, path[0]];
+    await axios.post(
+      API_URL + "/claim",
+      { polygon },
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    setPath([]);
+  } catch (err) {
+    if (err.response?.status === 409) {
+      setClaimError("Polygon overlaps with another claimed area. Try a different region!");
+    } else {
+      setClaimError(err.response?.data?.error || "Polygon claim failed");
+    }
+  } finally {
+    setClaimLoading(false);
+  }
+};
 
   const handleClaim = async () => {
     setClaimLoading(true);
@@ -140,19 +224,36 @@ export default function MapView({ token, username }) {
               <Popup id="user-location-popup-1">You are here</Popup>
             </Marker>
           )}
-          {territories.map((t, i) => (
-            <CircleMarker
-              key={t._id || i}
-              center={[t.latitude, t.longitude]}
-              radius={12}
-              pathOptions={{ color: userColor(t.user, t.user === username), fillOpacity: 0.5 }}
-              id={`territory-circle-marker-${i}`}
-            >
-              <Popup id={`territory-popup-${i}-1`}>
-                {t.user} claimed here
-              </Popup>
-            </CircleMarker>
-          ))}
+          {/* Show all claimed territories as polygons or points */}
+          {territories.map((t, i) => {
+            if (t.geometry && t.geometry.type === 'Polygon') {
+              return (
+                <Polygon
+                  key={t._id || i}
+                  positions={t.geometry.coordinates[0].map(([lat, lng]) => [lat, lng])}
+                  pathOptions={{ color: userColor(t.user, t.user === username), fillOpacity: 0.25 }}
+                  id={`territory-polygon-${i}`}
+                >
+                  <Popup id={`territory-polygon-popup-${i}`}>{t.user} claimed this area</Popup>
+                </Polygon>
+              );
+            } else if (t.geometry && t.geometry.type === 'Point') {
+              return (
+                <CircleMarker
+                  key={t._id || i}
+                  center={[t.geometry.coordinates[1], t.geometry.coordinates[0]]}
+                  radius={12}
+                  pathOptions={{ color: userColor(t.user, t.user === username), fillOpacity: 0.5 }}
+                  id={`territory-circle-marker-${i}`}
+                >
+                  <Popup id={`territory-popup-${i}-1`}>
+                    {t.user} claimed here
+                  </Popup>
+                </CircleMarker>
+              );
+            }
+            return null;
+          })}
           {/* Animated pulse for the latest claim */}
           {animatedClaim && (
             <CircleMarker
@@ -171,7 +272,25 @@ export default function MapView({ token, username }) {
               id={`profile-highlight-marker-${i}`}
             />
           ))}
+          {/* Path polyline and polygon preview */}
+          {path.length > 1 && (
+            <Polyline positions={path} color="#2563eb" id="user-path-polyline-1" />
+          )}
+          {polygonReady && (
+            <Polygon positions={path.concat([path[0]])} color="#2563eb" fillOpacity={0.2} id="user-path-polygon-1" />
+          )}
         </MapContainer>
+        <div id="path-controls-bar-1" className="absolute top-4 left-1/2 transform -translate-x-1/2 flex gap-2 z-10">
+          {!recording && (
+            <button id="start-path-btn-1" className="bg-blue-600 text-white px-4 py-2 rounded shadow" onClick={handleStartPath} disabled={recording}>Start Path</button>
+          )}
+          {recording && (
+            <button id="stop-path-btn-1" className="bg-yellow-600 text-white px-4 py-2 rounded shadow" onClick={handleStopPath}>Stop Path</button>
+          )}
+          {polygonReady && !claimLoading && (
+            <button id="claim-area-btn-1" className="bg-green-600 text-white px-4 py-2 rounded shadow" onClick={handleClaimArea}>Claim Area</button>
+          )}
+        </div>
         <button
           id="claim-territory-btn-1"
           className="absolute bottom-4 left-1/2 transform -translate-x-1/2 bg-green-600 text-white px-6 py-2 rounded shadow-lg hover:bg-green-700 transition"
@@ -181,10 +300,15 @@ export default function MapView({ token, username }) {
           {claimLoading ? "Claiming..." : "Claim Territory Here"}
         </button>
         {claimError && (
-          <div id="claim-error-1" className="absolute bottom-16 left-1/2 transform -translate-x-1/2 bg-red-500 text-white px-4 py-2 rounded shadow">
-            {claimError}
-          </div>
-        )}
+  <div id="claim-error-bar-1" className="fixed top-6 left-1/2 transform -translate-x-1/2 bg-red-600 text-white px-6 py-3 rounded shadow-lg z-50 flex items-center gap-2">
+    <span id="claim-error-msg-1">{claimError}</span>
+    <button
+      id="claim-error-dismiss-btn-1"
+      className="ml-4 px-2 py-1 bg-white bg-opacity-20 rounded text-white hover:bg-opacity-40"
+      onClick={() => setClaimError("")}
+    >Dismiss</button>
+  </div>
+)}
       </div>
       <div id="leaderboard-container-1" className="bg-gray-100 p-2 shadow-inner">
         <h2 id="leaderboard-title-1" className="font-bold mb-1">Leaderboard</h2>
