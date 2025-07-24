@@ -201,20 +201,39 @@ export default function MapView({ token, username }) {
   };
 
   return (
-    <div id="map-root" className="w-full h-screen flex flex-col">
-      {notification && (
-        <div id="notification-bar-1" className="bg-blue-500 text-white p-2 text-center">
-          {notification}
-        </div>
-      )}
-      <div id="map-container-wrapper-1" className="flex-1 relative">
-        <MapContainer
-          id="leaflet-map-container-1"
-          center={position}
-          zoom={15}
-          scrollWheelZoom={true}
-          className="w-full h-full rounded-lg shadow-lg"
+  <div id="map-root" className="w-full h-screen flex flex-col bg-gray-50">
+    {/* Top notification bar */}
+    {notification && (
+      <div id="notification-bar-1" className="bg-gradient-to-r from-blue-500 to-blue-600 text-white p-3 text-center font-medium shadow-md animate-pulse">
+        <span id="notification-text-1">{notification}</span>
+      </div>
+    )}
+    
+    {/* Error notification */}
+    {claimError && (
+      <div id="claim-error-bar-1" className="fixed top-4 left-1/2 transform -translate-x-1/2 bg-red-600 text-white px-6 py-3 rounded-lg shadow-lg z-50 flex items-center gap-3 animate-fade-in">
+        <svg id="error-icon-1" className="w-5 h-5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+          <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+        </svg>
+        <span id="claim-error-msg-1" className="flex-1">{claimError}</span>
+        <button
+          id="claim-error-dismiss-btn-1"
+          className="ml-2 px-3 py-1 bg-white bg-opacity-20 rounded-md text-white hover:bg-opacity-30 transition-colors font-medium text-sm"
+          onClick={() => setClaimError("")}
         >
+          Dismiss
+        </button>
+      </div>
+    )}
+
+    <div id="map-container-wrapper-1" className="flex-1 relative">
+      <MapContainer
+        id="leaflet-map-container-1"
+        center={position}
+        zoom={15}
+        scrollWheelZoom={true}
+        className="w-full h-full"
+      >
           <TileLayer
             id="tile-layer-osm-1"
             attribution="&copy; <a href='https://osm.org/copyright'>OpenStreetMap</a> contributors"
@@ -293,50 +312,152 @@ export default function MapView({ token, username }) {
             <Polygon positions={path.concat([path[0]])} color="#2563eb" fillOpacity={0.2} id="user-path-polygon-1" />
           )}
         </MapContainer>
-        <div id="path-controls-bar-1" className="absolute top-4 left-1/2 transform -translate-x-1/2 flex gap-2 z-10">
+        
+        {/* Path Controls - Top Center */}
+        <div id="path-controls-bar-1" className="absolute top-4 left-1/2 transform -translate-x-1/2 flex gap-3 z-10">
           {!recording && (
-            <button id="start-path-btn-1" className="bg-blue-600 text-white px-4 py-2 rounded shadow" onClick={handleStartPath} disabled={recording}>Start Path</button>
+            <button 
+              id="start-path-btn-1" 
+              className="bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white px-5 py-2.5 rounded-lg shadow-lg font-medium transition-all duration-200 transform hover:scale-105 flex items-center gap-2"
+              onClick={handleStartPath} 
+              disabled={recording}
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+              </svg>
+              Start Path
+            </button>
           )}
           {recording && (
-            <button id="stop-path-btn-1" className="bg-yellow-600 text-white px-4 py-2 rounded shadow" onClick={handleStopPath}>Stop Path</button>
+            <button 
+              id="stop-path-btn-1" 
+              className="bg-gradient-to-r from-yellow-500 to-orange-500 hover:from-yellow-600 hover:to-orange-600 text-white px-5 py-2.5 rounded-lg shadow-lg font-medium transition-all duration-200 transform hover:scale-105 flex items-center gap-2 animate-pulse"
+              onClick={handleStopPath}
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 10a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z" />
+              </svg>
+              Stop Path
+            </button>
           )}
           {polygonReady && !claimLoading && (
-            <button id="claim-area-btn-1" className="bg-green-600 text-white px-4 py-2 rounded shadow" onClick={handleClaimArea}>Claim Area</button>
+            <button 
+              id="claim-area-btn-1" 
+              className="bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-600 hover:to-emerald-600 text-white px-5 py-2.5 rounded-lg shadow-lg font-medium transition-all duration-200 transform hover:scale-105 flex items-center gap-2"
+              onClick={handleClaimArea}
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" />
+              </svg>
+              Claim Area
+            </button>
           )}
         </div>
+        
+        {/* Territory Claim Button - Bottom Center */}
         <button
           id="claim-territory-btn-1"
-          className="absolute bottom-4 left-1/2 transform -translate-x-1/2 bg-green-600 text-white px-6 py-2 rounded shadow-lg hover:bg-green-700 transition"
+          className="absolute bottom-6 left-1/2 transform -translate-x-1/2 bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-600 hover:to-emerald-600 disabled:from-gray-400 disabled:to-gray-500 text-white px-8 py-3 rounded-xl shadow-lg font-medium transition-all duration-200 transform hover:scale-105 disabled:hover:scale-100 flex items-center gap-2"
           onClick={handleClaim}
           disabled={claimLoading || !hasLocation}
         >
-          {claimLoading ? "Claiming..." : "Claim Territory Here"}
+          {claimLoading ? (
+            <>
+              <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              </svg>
+              Claiming...
+            </>
+          ) : (
+            <>
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+              Claim Territory Here
+            </>
+          )}
         </button>
-        {claimError && (
-  <div id="claim-error-bar-1" className="fixed top-6 left-1/2 transform -translate-x-1/2 bg-red-600 text-white px-6 py-3 rounded shadow-lg z-50 flex items-center gap-2">
-    <span id="claim-error-msg-1">{claimError}</span>
-    <button
-      id="claim-error-dismiss-btn-1"
-      className="ml-4 px-2 py-1 bg-white bg-opacity-20 rounded text-white hover:bg-opacity-40"
-      onClick={() => setClaimError("")}
-    >Dismiss</button>
-  </div>
-)}
-      </div>
-      <div id="leaderboard-container-1" className="bg-gray-100 p-2 shadow-inner">
-        <h2 id="leaderboard-title-1" className="font-bold mb-1">Leaderboard</h2>
-        <ul id="leaderboard-list-1">
-          {leaderboard.map((entry, idx) => (
-            <li
-              key={entry._id}
-              id={`leaderboard-entry-${idx}-1`}
-              className={`cursor-pointer ${entry._id === username ? 'font-bold text-blue-700' : 'hover:underline'}`}
-              onClick={() => handleLeaderboardClick(entry._id)}
+                {claimError && (
+          <div id="claim-error-bar-1" className="fixed top-4 left-1/2 transform -translate-x-1/2 bg-red-600 text-white px-6 py-3 rounded-lg shadow-lg z-50 flex items-center gap-3 animate-fade-in">
+            <svg id="error-icon-1" className="w-5 h-5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+              <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+            </svg>
+            <span id="claim-error-msg-1" className="flex-1">{claimError}</span>
+            <button
+              id="claim-error-dismiss-btn-1"
+              className="ml-2 px-3 py-1 bg-white bg-opacity-20 rounded-md text-white hover:bg-opacity-30 transition-colors font-medium text-sm"
+              onClick={() => setClaimError("")}
             >
-              {entry._id}: {entry.claims}
-            </li>
-          ))}
-        </ul>
+              Dismiss
+            </button>
+          </div>
+        )}
+      </div>
+      
+      {/* Enhanced Leaderboard */}
+      <div id="leaderboard-container-1" className="bg-gradient-to-br from-white to-gray-50 p-4 shadow-lg border-t border-gray-200">
+        <div id="leaderboard-header-1" className="flex items-center justify-center mb-3">
+          <svg className="w-5 h-5 text-yellow-500 mr-2" fill="currentColor" viewBox="0 0 20 20">
+            <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+          </svg>
+          <h2 id="leaderboard-title-1" className="text-lg font-bold text-gray-800">Leaderboard</h2>
+        </div>
+        <div id="leaderboard-list-container-1" className="max-h-48 overflow-y-auto custom-scrollbar">
+          {leaderboard.length === 0 ? (
+            <div id="leaderboard-empty-1" className="text-center text-gray-500 py-4">
+              <svg className="w-8 h-8 mx-auto mb-2 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+              </svg>
+              No players yet
+            </div>
+          ) : (
+            <ul id="leaderboard-list-1" className="space-y-2">
+              {leaderboard.map((entry, idx) => {
+                const isCurrentUser = entry._id === username;
+                const isTopThree = idx < 3;
+                const rankIcons = ['🥇', '🥈', '🥉'];
+                
+                return (
+                  <li
+                    key={entry._id}
+                    id={`leaderboard-entry-${idx}-1`}
+                    className={`
+                      cursor-pointer rounded-lg p-3 transition-all duration-200 flex items-center justify-between
+                      ${
+                        isCurrentUser
+                          ? 'bg-blue-100 border-2 border-blue-300 text-blue-800 font-bold transform scale-105'
+                          : isTopThree
+                          ? 'bg-gradient-to-r from-yellow-50 to-orange-50 border border-yellow-200 hover:shadow-md'
+                          : 'bg-white border border-gray-200 hover:bg-gray-50 hover:shadow-sm'
+                      }
+                    `}
+                    onClick={() => handleLeaderboardClick(entry._id)}
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="flex-shrink-0 w-8 h-8 rounded-full bg-gradient-to-br from-blue-400 to-purple-500 flex items-center justify-center text-white font-bold text-sm">
+                        {isTopThree ? rankIcons[idx] : idx + 1}
+                      </div>
+                      <div>
+                        <div className={`font-medium ${isCurrentUser ? 'text-blue-800' : 'text-gray-800'}`}>
+                          {entry._id} {isCurrentUser && '(You)'}
+                        </div>
+                        <div className="text-sm text-gray-500">
+                          {entry.claims} claim{entry.claims !== 1 ? 's' : ''}
+                        </div>
+                      </div>
+                    </div>
+                    <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                    </svg>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
       </div>
       {profileUser && (
         <UserProfileModal
