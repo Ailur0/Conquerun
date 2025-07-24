@@ -4,6 +4,8 @@ const mongoose = require('mongoose');
 const socketIo = require('socket.io');
 const cors = require('cors');
 
+const territoriesRouter = require('./routes/territories');
+
 const app = express();
 const server = http.createServer(app);
 const io = socketIo(server, { cors: { origin: '*' } });
@@ -20,6 +22,9 @@ mongoose.connect('mongodb://localhost:27017/conquerun', { useNewUrlParser: true,
 app.get('/', (req, res) => {
   res.send('Conquerun backend running');
 });
+
+// Territories API
+app.use('/api/territories', territoriesRouter);
 
 // Socket.io placeholder
 io.on('connection', (socket) => {
