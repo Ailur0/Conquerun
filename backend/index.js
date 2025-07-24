@@ -6,6 +6,7 @@ const cors = require('cors');
 
 const createTerritoriesRouter = require('./routes/territories');
 const authRouter = require('./routes/auth');
+const usersRouter = require('./routes/users');
 
 const app = express();
 const server = http.createServer(app);
@@ -26,6 +27,9 @@ app.get('/', (req, res) => {
 
 // Auth API
 app.use('/api/auth', authRouter);
+
+// User profile API
+app.use('/api/users', usersRouter);
 
 // Territories API with socket.io
 app.use('/api/territories', createTerritoriesRouter(io));

@@ -1,11 +1,13 @@
 import { useEffect, useState } from "react";
-import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
+import { MapContainer, TileLayer, Marker, Popup, CircleMarker } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import { io } from "socket.io-client";
 import axios from "axios";
+import UserProfileModal from "./UserProfileModal";
 
 const SOCKET_URL = "http://localhost:5000";
 const API_URL = "http://localhost:5000/api/territories";
+const USER_API_URL = "http://localhost:5000/api/users";
 
 export default function MapView({ token, username }) {
   const [position, setPosition] = useState([51.505, -0.09]); // Default: London
@@ -15,6 +17,8 @@ export default function MapView({ token, username }) {
   const [notification, setNotification] = useState("");
   const [claimLoading, setClaimLoading] = useState(false);
   const [claimError, setClaimError] = useState("");
+  const [profileUser, setProfileUser] = useState(null);
+  const [profileTerritories, setProfileTerritories] = useState([]);
 
   useEffect(() => {
     if (navigator.geolocation) {
@@ -63,6 +67,22 @@ export default function MapView({ token, username }) {
     }
   };
 
+  const handleLeaderboardClick = async (user) => {
+    setProfileUser(user);
+    // Fetch user's claimed territories
+    try {
+      const res = await axios.get(`${USER_API_URL}/${user}/territories`);
+      setProfileTerritories(res.data);
+    } catch {
+      setProfileTerritories([]);
+    }
+  };
+
+  const handleCloseProfile = () => {
+    setProfileUser(null);
+    setProfileTerritories([]);
+  };
+
   return (
     <div id="map-root" className="w-full h-screen flex flex-col">
       {notification && (
@@ -93,6 +113,15 @@ export default function MapView({ token, username }) {
               <Popup id={`territory-popup-${i}-1`}>{t.user} claimed here</Popup>
             </Marker>
           ))}
+          {profileUser && profileTerritories.map((t, i) => (
+            <CircleMarker
+              key={t._id || i}
+              center={[t.latitude, t.longitude]}
+              radius={15}
+              pathOptions={{ color: t.user === username ? '#2563eb' : '#f59e42', fillOpacity: 0.3 }}
+              id={`profile-highlight-marker-${i}`}
+            />
+          ))}
         </MapContainer>
         <button
           id="claim-territory-btn-1"
@@ -112,10 +141,24 @@ export default function MapView({ token, username }) {
         <h2 id="leaderboard-title-1" className="font-bold mb-1">Leaderboard</h2>
         <ul id="leaderboard-list-1">
           {leaderboard.map((entry, idx) => (
-            <li key={entry._id} id={`leaderboard-entry-${idx}-1`}>{entry._id}: {entry.claims}</li>
+            <li
+              key={entry._id}
+              id={`leaderboard-entry-${idx}-1`}
+              className={`cursor-pointer ${entry._id === username ? 'font-bold text-blue-700' : 'hover:underline'}`}
+              onClick={() => handleLeaderboardClick(entry._id)}
+            >
+              {entry._id}: {entry.claims}
+            </li>
           ))}
         </ul>
       </div>
+      {profileUser && (
+        <UserProfileModal
+          username={profileUser}
+          onClose={handleCloseProfile}
+          idPrefix="profile"
+        />
+      )}
     </div>
   );
 }
