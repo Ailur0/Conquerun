@@ -1,20 +1,25 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { GameMap } from './components/Map/GameMap';
 import { AuthModal } from './components/Auth/AuthModal';
 import { GameStats } from './components/UI/GameStats';
 import { GameModeSelector } from './components/UI/GameModeSelector';
 import { GameOverlay } from './components/UI/GameOverlay';
 import { Leaderboard } from './components/UI/Leaderboard';
-import { ProfileView } from './components/Profile/ProfileView';
 import { Navigation } from './components/UI/Navigation';
 import { authService } from './services/authService';
 import { gameService } from './services/gameService';
 import { User, GameMode, Territory, GameSession } from './types';
+import Header from './components/UI/Header';
+import { SettingsPage } from './pages/SettingsPage';
+import { ToastProvider } from './components/UI/Toast';
 
 function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [showAuthModal, setShowAuthModal] = useState(false);
-  const [activeTab, setActiveTab] = useState<'game' | 'leaderboard' | 'profile'>('game');
+  const [activeTab, setActiveTab] = useState<'game' | 'leaderboard'>('game');
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [isLoadingApp, setIsLoadingApp] = useState(true);
+  const [leaderboardData, setLeaderboardData] = useState<User[]>([]);
   
   // Game state
   const [selectedMode, setSelectedMode] = useState<GameMode>('free-play');
@@ -27,15 +32,27 @@ function App() {
   
   // Load user on app start
   useEffect(() => {
-    const user = authService.getCurrentUser();
-    if (user) {
-      setCurrentUser(user);
-    } else {
-      setShowAuthModal(true);
-    }
-    
-    // Load existing territories
-    setTerritories(gameService.getTerritories());
+    const initializeApp = async () => {
+      setIsLoadingApp(true);
+      try {
+        const user = await authService.fetchProfile();
+        if (user) {
+          setCurrentUser(user);
+        } else {
+          // Only show auth modal if there's no user from a valid token
+          setShowAuthModal(true);
+        }
+        // Load existing territories
+        setTerritories(gameService.getTerritories());
+      } catch (error) {
+        console.error("Failed to initialize app:", error);
+        setShowAuthModal(true);
+      } finally {
+        setIsLoadingApp(false);
+      }
+    };
+
+    initializeApp();
   }, []);
 
   const handleAuth = (user: User) => {
@@ -96,7 +113,7 @@ function App() {
       accuracy: 10, // Mock accuracy
     };
 
-    const result = gameService.updateLocation(locationUpdate, currentUser.id);
+    const result = gameService.updateLocation(locationUpdate);
     
     if (result.success) {
       setCurrentPath(result.path);
@@ -137,7 +154,38 @@ function App() {
     }
   };
 
-  const leaderboardUsers = authService.getLeaderboard();
+  useEffect(() => {
+    const fetchLeaderboard = async () => {
+      if (activeTab === 'leaderboard' && currentUser) {
+        const users = await authService.getLeaderboard();
+        setLeaderboardData(users);
+      }
+    };
+
+    fetchLeaderboard();
+  }, [activeTab, currentUser]);
+
+  const handleUpdateUser = async (username: string) => {
+    if (!currentUser) return { success: false, error: 'User not found' };
+    const result = await authService.updateUserProfile(username);
+    if (result.success && result.user) {
+      setCurrentUser(result.user);
+    }
+    return result;
+  };
+
+  const handleChangePassword = async (currentPassword: string, newPassword: string) => {
+    if (!currentUser) return { success: false, error: 'User not found' };
+    return await authService.changePassword(currentPassword, newPassword);
+  };
+
+  if (isLoadingApp) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-purple-50 flex items-center justify-center">
+        <h1 className="text-4xl font-bold text-gray-900 animate-pulse">🗺️ Loading Conquerun...</h1>
+      </div>
+    );
+  }
 
   if (!currentUser) {
     return (
@@ -164,73 +212,55 @@ function App() {
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
       {/* Header */}
-      <header className="bg-white shadow-sm p-4">
-        <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-bold text-gray-900">🗺️ Conquerun</h1>
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center">
-              <span className="text-white font-bold text-sm">
-                {currentUser.username.charAt(0).toUpperCase()}
-              </span>
-            </div>
-          </div>
-        </div>
-      </header>
-
+      <Header user={currentUser} onLogout={handleLogout} onOpenSettings={() => setSettingsOpen(true)} />
+      
       {/* Main Content */}
       <main className="flex-1 flex flex-col">
         {activeTab === 'game' && (
-          <>
-            {/* Game Map */}
-            <div className="flex-1 relative">
-              <GameMap
-                territories={territories}
-                currentPath={currentPath}
-                onLocationUpdate={handleLocationUpdate}
-                onTerritoryAttempt={handleTerritoryAttempt}
-                isPlaying={isPlaying}
-                className="h-full"
-              />
-            </div>
+           <div className="flex flex-col h-full">
+             {/* Game Map - Top part */}
+             <div className="h-[45vh]">
+               <GameMap
+                 territories={territories}
+                 setTerritories={setTerritories}
+                 currentPath={currentPath}
+                 onLocationUpdate={handleLocationUpdate}
+                 onTerritoryAttempt={handleTerritoryAttempt}
+                 isPlaying={isPlaying}
+                 className="h-full"
+               />
+             </div>
 
-            {/* Game UI Overlay */}
-            <div className="absolute top-20 left-4 right-4 z-10 pointer-events-none">
-              <div className="pointer-events-auto">
-                <GameStats user={currentUser} session={currentSession} className="mb-4" />
-                
-                {!currentSession && (
-                  <GameModeSelector
-                    selectedMode={selectedMode}
-                    onModeChange={setSelectedMode}
-                    onStartGame={handleStartGame}
-                  />
-                )}
-                
-                {currentSession && (
-                  <GameOverlay
-                    session={currentSession}
-                    isPlaying={isPlaying}
-                    onTogglePlay={handleTogglePlay}
-                    onEndGame={handleEndGame}
-                    currentPathLength={currentPath.length}
-                    speedWarning={speedWarning}
-                    error={gameError}
-                  />
-                )}
-              </div>
-            </div>
-          </>
+             {/* Game UI - Bottom part */}
+             <div className="flex-1 p-4 bg-gray-100 overflow-y-auto">
+               <GameStats user={currentUser} session={currentSession} className="mb-4" />
+               
+               {!currentSession && (
+                 <GameModeSelector
+                   selectedMode={selectedMode}
+                   onModeChange={setSelectedMode}
+                   onStartGame={handleStartGame}
+                 />
+               )}
+               
+               {currentSession && (
+                 <GameOverlay
+                   session={currentSession}
+                   isPlaying={isPlaying}
+                   onTogglePlay={handleTogglePlay}
+                   onEndGame={handleEndGame}
+                   currentPathLength={currentPath.length}
+                   speedWarning={speedWarning}
+                   error={gameError}
+                 />
+               )}
+             </div>
+           </div>
         )}
 
         {activeTab === 'leaderboard' && (
           <div className="flex-1 p-4">
-            <Leaderboard users={leaderboardUsers} currentUser={currentUser} />
-          </div>
-        )}
-
-        {activeTab === 'profile' && (
-          <div className="flex-1 p-4">
-            <ProfileView user={currentUser} onLogout={handleLogout} />
+            <Leaderboard users={leaderboardData} currentUser={currentUser} />
           </div>
         )}
       </main>
@@ -242,6 +272,15 @@ function App() {
         className="sticky bottom-0"
       />
 
+      {settingsOpen && currentUser && (
+        <SettingsPage 
+          user={currentUser} 
+          onClose={() => setSettingsOpen(false)} 
+          onUpdateUser={handleUpdateUser as (username: string) => Promise<{success: boolean, error?: string, user?: User}>} 
+          onChangePassword={handleChangePassword as (currentPassword: string, newPassword: string) => Promise<{success: boolean, error?: string}>}
+        />
+      )}
+
       {/* Auth Modal */}
       <AuthModal
         isOpen={showAuthModal}
@@ -252,4 +291,10 @@ function App() {
   );
 }
 
-export default App;
+const AppWithToast = () => (
+  <ToastProvider>
+    <App />
+  </ToastProvider>
+);
+
+export default AppWithToast;

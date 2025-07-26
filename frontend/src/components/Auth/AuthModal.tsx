@@ -13,14 +13,36 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onAuth })
   const [formData, setFormData] = useState({
     email: '',
     password: '',
+    confirmPassword: '',
     username: '',
   });
   const [error, setError] = useState('');
+  const [validationError, setValidationError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+
+  const resetFormState = () => {
+    setFormData({ email: '', password: '', confirmPassword: '', username: '' });
+    setError('');
+    setValidationError('');
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    setValidationError('');
+
+    if (!isLogin) {
+      if (formData.password !== formData.confirmPassword) {
+        setValidationError('Passwords do not match');
+        return;
+      }
+      const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*])[A-Za-z\d!@#$%^&*]{8,}$/;
+      if (!passwordRegex.test(formData.password)) {
+        setValidationError('Password does not meet complexity requirements.');
+        return;
+      }
+    }
+
     setIsLoading(true);
 
     try {
@@ -34,7 +56,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onAuth })
       if (result.success && result.user) {
         onAuth(result.user);
         onClose();
-        setFormData({ email: '', password: '', username: '' });
+        resetFormState();
       } else {
         setError(result.error || 'Authentication failed');
       }
@@ -123,6 +145,37 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onAuth })
               />
             </div>
 
+            {!isLogin && (
+              <div>
+                <label htmlFor="confirmPassword" className="block text-sm font-medium text-gray-700 mb-2">
+                  Confirm Password
+                </label>
+                <input
+                  type="password"
+                  id="confirmPassword"
+                  name="confirmPassword"
+                  value={formData.confirmPassword}
+                  onChange={handleInputChange}
+                  required={!isLogin}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                  placeholder="Confirm your new password"
+                />
+              </div>
+            )}
+
+            {validationError && (
+              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
+                <p className="text-yellow-700 text-sm">{validationError}</p>
+                <ul className="text-xs text-yellow-600 list-disc list-inside mt-1">
+                  <li>At least 8 characters</li>
+                  <li>One uppercase letter</li>
+                  <li>One lowercase letter</li>
+                  <li>One number</li>
+                  <li>One special character (!@#$%^&*)</li>
+                </ul>
+              </div>
+            )}
+
             {error && (
               <div className="bg-red-50 border border-red-200 rounded-lg p-3">
                 <p className="text-red-600 text-sm">{error}</p>
@@ -144,8 +197,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onAuth })
               <button
                 onClick={() => {
                   setIsLogin(!isLogin);
-                  setError('');
-                  setFormData({ email: '', password: '', username: '' });
+                  resetFormState();
                 }}
                 className="ml-2 text-blue-500 hover:text-blue-600 font-semibold transition-colors"
               >

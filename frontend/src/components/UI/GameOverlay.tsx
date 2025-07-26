@@ -24,12 +24,27 @@ export const GameOverlay: React.FC<GameOverlayProps> = ({
   className = '',
 }) => {
   const [timeElapsed, setTimeElapsed] = useState(0);
+  const [showTip, setShowTip] = useState(() => sessionStorage.getItem('tipDismissed') !== 'true');
+  const [tipFading, setTipFading] = useState(false);
 
   useEffect(() => {
-    let interval: NodeJS.Timeout;
+    if (!(isPlaying && currentPathLength < 4) || !showTip) return;
+    setTipFading(false);
+    const timeout = setTimeout(() => {
+      setTipFading(true);
+      setTimeout(() => {
+        setShowTip(false);
+        sessionStorage.setItem('tipDismissed', 'true');
+      }, 500);
+    }, 6000);
+    return () => clearTimeout(timeout);
+  }, [isPlaying, currentPathLength, showTip]);
+
+  useEffect(() => {
+    let interval: number;
     
     if (session && session.isActive && isPlaying) {
-      interval = setInterval(() => {
+      interval = window.setInterval(() => {
         const now = new Date();
         const elapsed = Math.floor((now.getTime() - session.startTime.getTime()) / 1000);
         setTimeElapsed(elapsed);
@@ -124,8 +139,9 @@ export const GameOverlay: React.FC<GameOverlayProps> = ({
             <div>
               <div className="font-medium text-red-800">Safety Alert</div>
               <div className="text-sm text-red-700 mt-1">
-                {speedWarning && "You're moving too fast! Please slow down for safety."}
-                {error && error}
+                <p className="text-sm">
+                  {error}
+                </p>
               </div>
             </div>
           </div>
@@ -133,10 +149,25 @@ export const GameOverlay: React.FC<GameOverlayProps> = ({
       )}
 
       {/* Tips */}
-      {isPlaying && currentPathLength < 4 && (
-        <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
+      {isPlaying && currentPathLength < 4 && showTip && (
+        <div className={`bg-blue-50 border border-blue-200 rounded-xl p-4 relative transition-opacity duration-500 ${tipFading ? 'opacity-0' : 'opacity-100'}`}>
           <div className="text-sm text-blue-800">
-            <div className="font-medium mb-1">💡 Tip</div>
+            <div className="font-medium mb-1 flex items-center justify-between">
+              <span>💡 Tip</span>
+              <button
+                className="ml-4 px-2 py-0.5 text-blue-500 hover:text-blue-700 text-lg font-bold opacity-60 hover:opacity-100 focus:outline-none"
+                aria-label="Dismiss tip"
+                onClick={() => {
+                  setTipFading(true);
+                  setTimeout(() => {
+                    setShowTip(false);
+                    sessionStorage.setItem('tipDismissed', 'true');
+                  }, 500);
+                }}
+              >
+                ×
+              </button>
+            </div>
             Walk around an area to create a closed path, then claim your territory!
           </div>
         </div>

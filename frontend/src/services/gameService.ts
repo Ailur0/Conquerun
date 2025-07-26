@@ -1,9 +1,9 @@
-import { Territory, GamePath, LocationUpdate, GameSession, User } from '../types';
+import { Territory, LocationUpdate, GameSession } from '../types';
 import { calculatePolygonArea, calculateSpeed, isValidPolygon, checkPolygonIntersection, generateUserColor } from '../utils/geospatial';
 
 class GameService {
   private territories: Territory[] = [];
-  private activePaths: GamePath[] = [];
+  
   private currentSession: GameSession | null = null;
   private lastLocation: LocationUpdate | null = null;
   private currentPath: [number, number][] = [];
@@ -72,55 +72,51 @@ class GameService {
     return this.currentSession;
   }
 
-  updateLocation(location: LocationUpdate, userId: string): { 
+  updateLocation(location: LocationUpdate): { 
     success: boolean; 
     path: [number, number][]; 
     speedWarning?: boolean;
     error?: string;
   } {
-    // Check speed limit (15 km/h)
-    let speedWarning = false;
-    if (this.lastLocation) {
-      const speed = calculateSpeed(this.lastLocation, location);
-      if (speed > 15) {
-        speedWarning = true;
-        return { 
-          success: false, 
-          path: this.currentPath, 
-          speedWarning: true,
-          error: 'Speed limit exceeded. Please slow down for safety.' 
-        };
-      }
+    if (!this.lastLocation) {
+      this.lastLocation = location;
+      return { success: true, path: this.currentPath };
     }
 
-    // Add to current path if moving significantly
-    if (this.currentPath.length === 0 || 
-        this.isSignificantMovement(location)) {
-      this.currentPath.push([location.lat, location.lng]);
+    const distance = this.calculateDistance(
+      this.lastLocation.lat, this.lastLocation.lng,
+      location.lat, location.lng
+    );
+
+    // Ignore GPS jitter by requiring a minimum movement of 3 meters
+    const MIN_MOVEMENT_THRESHOLD = 3; // meters
+    if (distance < MIN_MOVEMENT_THRESHOLD) {
+      return { success: true, path: this.currentPath };
     }
 
+    // Check speed limit (15 km/h) only after significant movement
+    const speed = calculateSpeed(this.lastLocation, location);
+    if (speed > 15) {
+      return { 
+        success: false, 
+        path: this.currentPath, 
+        speedWarning: true,
+        error: 'Speed limit exceeded. Please slow down for safety.' 
+      };
+    }
+
+    // Add to current path
+    this.currentPath.push([location.lat, location.lng]);
     this.lastLocation = location;
 
     return { 
       success: true, 
       path: this.currentPath,
-      speedWarning 
+      speedWarning: false
     };
   }
 
-  private isSignificantMovement(location: LocationUpdate): boolean {
-    if (!this.lastLocation) return true;
-    
-    const lastPoint = this.currentPath[this.currentPath.length - 1];
-    if (!lastPoint) return true;
-
-    const distance = this.calculateDistance(
-      lastPoint[0], lastPoint[1],
-      location.lat, location.lng
-    );
-
-    return distance > 5; // 5 meters minimum movement
-  }
+  
 
   private calculateDistance(lat1: number, lng1: number, lat2: number, lng2: number): number {
     const R = 6371000;

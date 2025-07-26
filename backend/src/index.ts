@@ -21,19 +21,44 @@ app.get('/api/health', (_req, res) => {
 
 // Auth routes
 import authRoutes from './routes/auth';
+import userRoutes from './routes/user';
 import territoryRoutes from './routes/territories';
 import leaderboardRoutes from './routes/leaderboard';
 
 app.use('/api/auth', authRoutes);
+app.use('/api/user', userRoutes);
 app.use('/api/territories', territoryRoutes);
 app.use('/api/leaderboard', leaderboardRoutes);
 
 // Connect to MongoDB and start server
+import http from 'http';
+import { Server as SocketIOServer } from 'socket.io';
+
+const server = http.createServer(app);
+const io = new SocketIOServer(server, {
+  cors: { origin: '*' }
+});
+// Expose io globally for controller event emission
+(global as any).io = io;
+
+io.on('connection', (socket) => {
+  console.log('A user connected:', socket.id);
+
+  socket.on('player-move', (data) => {
+    // Broadcast to all other clients
+    socket.broadcast.emit('player-move', data);
+  });
+
+  socket.on('disconnect', () => {
+    console.log('User disconnected:', socket.id);
+  });
+});
+
 mongoose.connect(MONGO_URI)
   .then(() => {
     console.log('Connected to MongoDB');
-    app.listen(PORT, () => {
-      console.log(`Server running on port ${PORT}`);
+    server.listen(PORT, () => {
+      console.log(`Server with Socket.io running on port ${PORT}`);
     });
   })
   .catch((err) => {

@@ -17,7 +17,7 @@ Conquerun/
 │   ├── src/
 │   ├── package.json
 │   └── ...
-├── project/        # React + TypeScript frontend
+├── frontend/        # React + TypeScript frontend
 │   ├── src/
 │   ├── package.json
 │   └── ...
