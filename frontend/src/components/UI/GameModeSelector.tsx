@@ -40,53 +40,98 @@ export const GameModeSelector: React.FC<GameModeSelectorProps> = ({
     },
   ];
 
+  const getColorClasses = (color: string, isSelected: boolean) => {
+    const colorMap = {
+      blue: {
+        bg: isSelected ? 'bg-blue-50' : 'bg-gray-50',
+        border: isSelected ? 'border-blue-500' : 'border-transparent',
+        icon: isSelected ? 'bg-gradient-to-br from-blue-500 to-blue-600' : 'bg-gray-400',
+        radio: 'bg-blue-500'
+      },
+      orange: {
+        bg: isSelected ? 'bg-orange-50' : 'bg-gray-50',
+        border: isSelected ? 'border-orange-500' : 'border-transparent',
+        icon: isSelected ? 'bg-gradient-to-br from-orange-500 to-orange-600' : 'bg-gray-400',
+        radio: 'bg-orange-500'
+      },
+      green: {
+        bg: isSelected ? 'bg-green-50' : 'bg-gray-50',
+        border: isSelected ? 'border-green-500' : 'border-transparent',
+        icon: isSelected ? 'bg-gradient-to-br from-green-500 to-green-600' : 'bg-gray-400',
+        radio: 'bg-green-500'
+      }
+    };
+    return colorMap[color as keyof typeof colorMap] || colorMap.blue;
+  };
+
   return (
-    <div className={`bg-white shadow-lg rounded-2xl p-4 ${className}`}>
-      <h3 className="text-lg font-semibold text-gray-900 mb-4">Select Game Mode</h3>
+    <div className={`card-elevated p-6 fade-in ${className}`}>
+      <div className="text-center mb-6">
+        <h3 className="text-xl font-bold text-gray-900 mb-2">Choose Your Adventure</h3>
+        <p className="text-gray-600 text-sm">Select a game mode to start conquering territories</p>
+      </div>
       
-      <div className="space-y-3">
-        {modes.map((mode) => {
+      <div className="space-y-4">
+        {modes.map((mode, index) => {
           const Icon = mode.icon;
           const isSelected = selectedMode === mode.id;
+          const colors = getColorClasses(mode.color, isSelected);
           
           return (
             <button
               key={mode.id}
               onClick={() => !mode.disabled && onModeChange(mode.id)}
               disabled={mode.disabled}
-              className={`w-full p-4 rounded-xl text-left transition-all duration-200 ${
-                isSelected
-                  ? `bg-${mode.color}-50 border-2 border-${mode.color}-500`
-                  : 'bg-gray-50 border-2 border-transparent hover:bg-gray-100'
-              } ${mode.disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+              className={`w-full p-5 rounded-2xl text-left transition-all duration-300 transform hover:scale-[1.02] ${
+                colors.bg
+              } border-2 ${colors.border} ${
+                mode.disabled 
+                  ? 'opacity-50 cursor-not-allowed' 
+                  : 'cursor-pointer hover:shadow-lg active:scale-[0.98]'
+              }`}
+              style={{ animationDelay: `${index * 0.1}s` }}
             >
-              <div className="flex items-center gap-3">
-                <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
-                  isSelected ? `bg-${mode.color}-500` : 'bg-gray-400'
-                }`}>
-                  <Icon className="w-5 h-5 text-white" />
+              <div className="flex items-center gap-4">
+                <div className={`w-12 h-12 rounded-xl flex items-center justify-center shadow-md ${colors.icon}`}>
+                  <Icon className="w-6 h-6 text-white" />
                 </div>
                 <div className="flex-1">
-                  <div className="font-semibold text-gray-900">{mode.name}</div>
-                  <div className="text-sm text-gray-600">{mode.description}</div>
-                </div>
-                {isSelected && (
-                  <div className={`w-4 h-4 rounded-full bg-${mode.color}-500`}>
-                    <div className="w-2 h-2 bg-white rounded-full m-1"></div>
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="font-bold text-gray-900">{mode.name}</span>
+                    {mode.disabled && (
+                      <span className="text-xs bg-gray-200 text-gray-600 px-2 py-1 rounded-full">
+                        Coming Soon
+                      </span>
+                    )}
                   </div>
-                )}
+                  <div className="text-sm text-gray-600 leading-relaxed">{mode.description}</div>
+                </div>
+                <div className="flex items-center">
+                  {isSelected ? (
+                    <div className={`w-5 h-5 rounded-full ${colors.radio} flex items-center justify-center`}>
+                      <div className="w-2 h-2 bg-white rounded-full"></div>
+                    </div>
+                  ) : (
+                    <div className="w-5 h-5 rounded-full border-2 border-gray-300"></div>
+                  )}
+                </div>
               </div>
             </button>
           );
         })}
       </div>
 
-      <button
-        onClick={onStartGame}
-        className="w-full bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white font-semibold py-4 px-6 rounded-xl mt-6 transition-all duration-200 transform hover:scale-105 shadow-lg"
-      >
-        Start Game
-      </button>
+      <div className="mt-8 space-y-3">
+        <button
+          onClick={onStartGame}
+          className="btn-primary w-full text-lg py-4"
+        >
+          🎮 Start Adventure
+        </button>
+        <p className="text-xs text-gray-500 text-center">
+          Walk around to create paths and claim territories
+        </p>
+      </div>
     </div>
   );
 };
