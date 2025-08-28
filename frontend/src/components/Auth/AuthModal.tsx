@@ -77,18 +77,25 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onAuth })
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md">
-        <div className="p-6">
-          <div className="flex items-center justify-between mb-6">
-            <h2 className="text-2xl font-bold text-gray-900">
-              {isLogin ? 'Welcome Back' : 'Join Conquerun'}
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 fade-in">
+      <div className="glass-card rounded-3xl shadow-2xl w-full max-w-md bounce-in">
+        <div className="p-8">
+          <div className="text-center mb-8">
+            <div className="w-16 h-16 mx-auto mb-4 bg-gradient-to-br from-blue-500 to-purple-600 rounded-2xl flex items-center justify-center text-2xl text-white shadow-lg">
+              🗺️
+            </div>
+            <h2 className="text-3xl font-bold bg-gradient-to-r from-gray-800 to-gray-600 bg-clip-text text-transparent mb-2">
+              {isLogin ? 'Welcome Back!' : 'Join Conquerun'}
             </h2>
+            <p className="text-gray-600">
+              {isLogin ? 'Ready for your next adventure?' : 'Start your territory conquest journey'}
+            </p>
             <button
               onClick={onClose}
-              className="text-gray-400 hover:text-gray-600 transition-colors"
+              className="absolute top-4 right-4 w-8 h-8 flex items-center justify-center text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full transition-all duration-200"
+              aria-label="Close modal"
             >
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
               </svg>
             </button>
@@ -107,7 +114,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onAuth })
                   value={formData.username}
                   onChange={handleInputChange}
                   required={!isLogin}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                  className="input-field"
                   placeholder="Choose a username"
                 />
               </div>
@@ -124,7 +131,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onAuth })
                 value={formData.email}
                 onChange={handleInputChange}
                 required
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                className="input-field"
                 placeholder="Enter your email"
               />
             </div>
@@ -140,7 +147,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onAuth })
                 value={formData.password}
                 onChange={handleInputChange}
                 required
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                className="input-field"
                 placeholder="Enter your password"
               />
             </div>
@@ -157,60 +164,80 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onAuth })
                   value={formData.confirmPassword}
                   onChange={handleInputChange}
                   required={!isLogin}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                  className="input-field"
                   placeholder="Confirm your new password"
                 />
               </div>
             )}
 
             {validationError && (
-              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
-                <p className="text-yellow-700 text-sm">{validationError}</p>
-                <ul className="text-xs text-yellow-600 list-disc list-inside mt-1">
-                  <li>At least 8 characters</li>
-                  <li>One uppercase letter</li>
-                  <li>One lowercase letter</li>
-                  <li>One number</li>
-                  <li>One special character (!@#$%^&*)</li>
-                </ul>
+              <div className="bg-gradient-to-r from-yellow-50 to-orange-50 border border-yellow-200 rounded-xl p-4 slide-up">
+                <p className="text-yellow-800 text-sm font-medium mb-2">{validationError}</p>
+                <div className="text-xs text-yellow-700 space-y-1">
+                  <div className="flex items-center space-x-2">
+                    <div className="w-1.5 h-1.5 bg-yellow-500 rounded-full"></div>
+                    <span>At least 8 characters</span>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <div className="w-1.5 h-1.5 bg-yellow-500 rounded-full"></div>
+                    <span>One uppercase & lowercase letter</span>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <div className="w-1.5 h-1.5 bg-yellow-500 rounded-full"></div>
+                    <span>One number & special character</span>
+                  </div>
+                </div>
               </div>
             )}
 
             {error && (
-              <div className="bg-red-50 border border-red-200 rounded-lg p-3">
-                <p className="text-red-600 text-sm">{error}</p>
+              <div className="bg-gradient-to-r from-red-50 to-pink-50 border border-red-200 rounded-xl p-4 slide-up">
+                <div className="flex items-center space-x-2">
+                  <div className="w-2 h-2 bg-red-500 rounded-full"></div>
+                  <p className="text-red-700 text-sm font-medium">{error}</p>
+                </div>
               </div>
             )}
 
             <button
               type="submit"
               disabled={isLoading}
-              className="w-full bg-blue-500 hover:bg-blue-600 disabled:bg-blue-300 text-white font-semibold py-3 px-4 rounded-lg transition-colors"
+              className="btn-primary w-full text-lg disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
             >
-              {isLoading ? 'Please wait...' : (isLogin ? 'Sign In' : 'Create Account')}
+              {isLoading ? (
+                <div className="flex items-center justify-center space-x-2">
+                  <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                  <span>Please wait...</span>
+                </div>
+              ) : (
+                <span>{isLogin ? '🚀 Sign In' : '✨ Create Account'}</span>
+              )}
             </button>
           </form>
 
-          <div className="mt-6 text-center">
+          <div className="mt-8 text-center">
             <p className="text-gray-600">
               {isLogin ? "Don't have an account?" : 'Already have an account?'}
-              <button
-                onClick={() => {
-                  setIsLogin(!isLogin);
-                  resetFormState();
-                }}
-                className="ml-2 text-blue-500 hover:text-blue-600 font-semibold transition-colors"
-              >
-                {isLogin ? 'Sign Up' : 'Sign In'}
-              </button>
             </p>
+            <button
+              onClick={() => {
+                setIsLogin(!isLogin);
+                resetFormState();
+              }}
+              className="mt-2 text-blue-600 hover:text-blue-700 font-semibold transition-colors underline decoration-2 underline-offset-2 hover:decoration-blue-700"
+            >
+              {isLogin ? 'Create New Account' : 'Sign In Instead'}
+            </button>
           </div>
 
           {isLogin && (
-            <div className="mt-4 p-3 bg-blue-50 rounded-lg">
-              <p className="text-xs text-gray-600 text-center">
-                Demo credentials: explorer@example.com / any password
-              </p>
+            <div className="mt-6 p-4 bg-gradient-to-r from-blue-50 to-purple-50 rounded-xl border border-blue-100">
+              <div className="text-center">
+                <p className="text-xs text-gray-500 mb-1">💡 Demo Account</p>
+                <p className="text-sm text-gray-700 font-mono bg-white/50 px-3 py-1 rounded-lg">
+                  explorer@example.com
+                </p>
+              </div>
             </div>
           )}
         </div>
