@@ -181,24 +181,60 @@ function App() {
 
   if (isLoadingApp) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-purple-50 flex items-center justify-center">
-        <h1 className="text-4xl font-bold text-gray-900 animate-pulse">🗺️ Loading Conquerun...</h1>
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 via-purple-50 to-pink-50 flex items-center justify-center p-4">
+        <div className="text-center fade-in">
+          <div className="relative mb-8">
+            <div className="w-20 h-20 mx-auto bg-gradient-to-br from-blue-500 to-purple-600 rounded-2xl flex items-center justify-center text-3xl text-white shadow-2xl">
+              🗺️
+            </div>
+            <div className="absolute inset-0 w-20 h-20 mx-auto bg-gradient-to-br from-blue-500 to-purple-600 rounded-2xl opacity-20 pulse-ring"></div>
+          </div>
+          <h1 className="text-4xl font-bold text-gray-900 mb-4 text-shadow">Conquerun</h1>
+          <div className="flex items-center justify-center space-x-2">
+            <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce"></div>
+            <div className="w-2 h-2 bg-purple-500 rounded-full animate-bounce" style={{animationDelay: '0.1s'}}></div>
+            <div className="w-2 h-2 bg-pink-500 rounded-full animate-bounce" style={{animationDelay: '0.2s'}}></div>
+          </div>
+          <p className="text-gray-600 mt-4">Preparing your adventure...</p>
+        </div>
       </div>
     );
   }
 
   if (!currentUser) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-purple-50 flex items-center justify-center">
-        <div className="text-center p-8">
-          <h1 className="text-4xl font-bold text-gray-900 mb-4">🗺️ Conquerun</h1>
-          <p className="text-gray-600 mb-8">Claim territories by walking in the real world</p>
-          <button
-            onClick={() => setShowAuthModal(true)}
-            className="bg-blue-500 hover:bg-blue-600 text-white font-semibold py-3 px-8 rounded-xl transition-colors"
-          >
-            Get Started
-          </button>
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 via-purple-50 to-pink-50 flex items-center justify-center p-4">
+        <div className="text-center p-8 max-w-md mx-auto fade-in">
+          <div className="relative mb-8">
+            <div className="w-24 h-24 mx-auto bg-gradient-to-br from-blue-500 to-purple-600 rounded-3xl flex items-center justify-center text-4xl text-white shadow-2xl bounce-in">
+              🗺️
+            </div>
+            <div className="absolute inset-0 w-24 h-24 mx-auto bg-gradient-to-br from-blue-500 to-purple-600 rounded-3xl opacity-20 pulse-ring"></div>
+          </div>
+          <h1 className="text-5xl font-bold text-gray-900 mb-4 text-shadow-lg">Conquerun</h1>
+          <p className="text-lg text-gray-600 mb-8 leading-relaxed">Claim territories by walking in the real world and compete with players globally</p>
+          <div className="space-y-4">
+            <button
+              onClick={() => setShowAuthModal(true)}
+              className="btn-primary w-full text-lg"
+            >
+              🚀 Get Started
+            </button>
+            <div className="flex items-center justify-center space-x-6 text-sm text-gray-500">
+              <div className="flex items-center space-x-2">
+                <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                <span>Real-time</span>
+              </div>
+              <div className="flex items-center space-x-2">
+                <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+                <span>Multiplayer</span>
+              </div>
+              <div className="flex items-center space-x-2">
+                <div className="w-2 h-2 bg-purple-500 rounded-full"></div>
+                <span>Location-based</span>
+              </div>
+            </div>
+          </div>
         </div>
         <AuthModal
           isOpen={showAuthModal}
@@ -210,7 +246,7 @@ function App() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col">
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 via-blue-50/30 to-purple-50/30 flex flex-col">
       {/* Header */}
       <Header user={currentUser} onLogout={handleLogout} onOpenSettings={() => setSettingsOpen(true)} />
       
@@ -232,7 +268,7 @@ function App() {
              </div>
 
              {/* Game UI - Bottom part */}
-             <div className="flex-1 p-4 bg-gray-100 overflow-y-auto">
+             <div className="flex-1 p-4 bg-gradient-to-t from-gray-100 to-gray-50 overflow-y-auto">
                <GameStats user={currentUser} session={currentSession} className="mb-4" />
                
                {!currentSession && (
@@ -259,7 +295,7 @@ function App() {
         )}
 
         {activeTab === 'leaderboard' && (
-          <div className="flex-1 p-4">
+          <div className="flex-1 p-4 fade-in">
             <Leaderboard users={leaderboardData} currentUser={currentUser} />
           </div>
         )}
