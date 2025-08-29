@@ -110,7 +110,10 @@ class AuthService {
         headers: this.getAuthHeaders(),
       });
       if (!response.ok) return [];
-      return await response.json();
+      const data = await response.json();
+if (Array.isArray(data)) return data;
+if (data && Array.isArray(data.leaderboard)) return data.leaderboard;
+return [];
     } catch (error) {
       return [];
     }
