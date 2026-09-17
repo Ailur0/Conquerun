@@ -1,4 +1,18 @@
+import area from '@turf/area';
 import { LocationUpdate } from '../types';
+
+// Claim rules enforced by the backend (see backend territoryController)
+export const MIN_CLAIM_AREA_SQ_METERS = 1000;
+const SQ_METERS_PER_POINT = 100;
+
+// Area and points the backend would award for a walked path, closing the loop back to its start
+export const estimateClaim = (path: [number, number][]): { area: number; points: number } => {
+  if (path.length < 3) return { area: 0, points: 0 };
+  const ring = path.map(([lat, lng]) => [lng, lat]);
+  ring.push(ring[0]);
+  const claimArea = area({ type: 'Polygon', coordinates: [ring] });
+  return { area: claimArea, points: Math.floor(claimArea / SQ_METERS_PER_POINT) };
+};
 
 export const calculateDistance = (
   lat1: number,
@@ -20,25 +34,6 @@ export const calculateDistance = (
   return R * c;
 };
 
-export const calculatePolygonArea = (coordinates: [number, number][]): number => {
-  if (coordinates.length < 3) return 0;
-
-  let area = 0;
-  const n = coordinates.length;
-
-  for (let i = 0; i < n; i++) {
-    const j = (i + 1) % n;
-    const [lat1, lng1] = coordinates[i];
-    const [lat2, lng2] = coordinates[j];
-    
-    area += (lng2 - lng1) * (lat2 + lat1);
-  }
-
-  // Convert to square meters (approximate)
-  area = Math.abs(area) * 111139 * 111139 / 2;
-  return area;
-};
-
 export const calculateSpeed = (
   location1: LocationUpdate,
   location2: LocationUpdate
@@ -51,47 +46,6 @@ export const calculateSpeed = (
   );
   const timeDiff = (location2.timestamp.getTime() - location1.timestamp.getTime()) / 1000;
   return timeDiff > 0 ? (distance / timeDiff) * 3.6 : 0; // km/h
-};
-
-export const isValidPolygon = (coordinates: [number, number][]): boolean => {
-  if (coordinates.length < 3) return false;
-  
-  // Check if polygon is closed
-  const first = coordinates[0];
-  const last = coordinates[coordinates.length - 1];
-  return first[0] === last[0] && first[1] === last[1];
-};
-
-export const checkPolygonIntersection = (
-  poly1: [number, number][],
-  poly2: [number, number][]
-): boolean => {
-  // Simplified intersection check - in production would use more sophisticated algorithm
-  for (const point of poly1) {
-    if (isPointInPolygon(point, poly2)) {
-      return true;
-    }
-  }
-  return false;
-};
-
-export const isPointInPolygon = (
-  point: [number, number],
-  polygon: [number, number][]
-): boolean => {
-  const [x, y] = point;
-  let inside = false;
-
-  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
-    const [xi, yi] = polygon[i];
-    const [xj, yj] = polygon[j];
-
-    if (((yi > y) !== (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi)) {
-      inside = !inside;
-    }
-  }
-
-  return inside;
 };
 
 export const generateUserColor = (userId: string): string => {

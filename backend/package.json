@@ -8,6 +8,8 @@
     "dev": "nodemon src/index.ts"
   },
   "dependencies": {
+    "@turf/area": "^7.4.0",
+    "@turf/kinks": "^7.4.0",
     "@types/socket.io": "^3.0.1",
     "bcrypt": "^5.1.1",
     "cors": "^2.8.5",

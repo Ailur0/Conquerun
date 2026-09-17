@@ -1,20 +1,25 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { MapContainer, TileLayer, Polygon, Polyline, Circle, useMapEvents, useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, Polygon, Polyline, Circle, CircleMarker, Popup, Tooltip, useMapEvents, useMap } from 'react-leaflet';
 import { LatLngExpression } from 'leaflet';
-import { Territory } from '../../types';
+import { MapPinOff, Minus, Plus, LocateFixed } from 'lucide-react';
+import { Territory, User } from '../../types';
 import { useGeolocation } from '../../hooks/useGeolocation';
 
 import { socket } from '../../services/socket';
+import { ApiTerritory, ContestedTerritoryEvent, toTerritory } from '../../services/gameService';
 import { useToast } from '../UI/Toast';
 import { isPointNearPolygon, haversine } from '../../utils/geo';
+import { estimateClaim, MIN_CLAIM_AREA_SQ_METERS } from '../../utils/geospatial';
 import 'leaflet/dist/leaflet.css';
 
 interface GameMapProps {
+  currentUser: User;
   territories: Territory[];
   setTerritories: React.Dispatch<React.SetStateAction<Territory[]>>;
   currentPath: [number, number][];
   onLocationUpdate: (lat: number, lng: number) => void;
-  onTerritoryAttempt: () => void;
+  onTerritoryAttempt: () => Promise<Territory | null>;
+  onTerritoryContest: (territoryId: string, lat: number, lng: number) => Promise<{ success: boolean; territory?: Territory; error?: string }>;
   isPlaying: boolean;
   className?: string;
 }
@@ -39,6 +44,10 @@ const MapEvents: React.FC<{ onLocationUpdate: (lat: number, lng: number) => void
   return null;
 };
 
+const DEFAULT_ZOOM = 17;
+const MIN_ZOOM = 12;
+const MAX_ZOOM = 19;
+
 interface OtherPlayer {
   userId: string;
   username: string;
@@ -48,11 +57,13 @@ interface OtherPlayer {
 }
 
 export const GameMap: React.FC<GameMapProps> = ({
+  currentUser,
   territories,
   setTerritories,
   currentPath,
   onLocationUpdate,
   onTerritoryAttempt,
+  onTerritoryContest,
   isPlaying,
   className = '',
 }) => {
@@ -66,17 +77,22 @@ export const GameMap: React.FC<GameMapProps> = ({
   // Track last location/time for speed check
   const lastMoveRef = useRef<{ lat: number; lng: number; timestamp: number } | null>(null);
 
-  const [mapCenter, setMapCenter] = useState<LatLngExpression>([40.7829, -73.9654]); // NYC default
-  const [mapZoom, setMapZoom] = useState(16);
-  const mapRef = useRef<any>(null);
+  // Null until the first location fix, so the map opens on the player rather than a default city
+  const [mapCenter, setMapCenter] = useState<LatLngExpression | null>(null);
+  // Street level: territories are tens of meters across
+  const [mapZoom, setMapZoom] = useState(DEFAULT_ZOOM);
+  const hasCenteredRef = useRef(false);
 
   // Track other players' positions
   const [otherPlayers, setOtherPlayers] = useState<OtherPlayer[]>([]);
-  const userId = window.localStorage.getItem('userId') || Math.random().toString(36).slice(2, 10); // fallback for demo
-  const username = window.localStorage.getItem('username') || 'Player_' + userId;
+  const { id: userId, username } = currentUser;
 
-  // Emit player-move on location update
+  // Center on the first fix; while playing, follow the player and emit player-move
   useEffect(() => {
+    if (location && !hasCenteredRef.current) {
+      hasCenteredRef.current = true;
+      setMapCenter([location.lat, location.lng]);
+    }
     if (location && isPlaying) {
       setMapCenter([location.lat, location.lng]);
       onLocationUpdate(location.lat, location.lng);
@@ -88,7 +104,7 @@ export const GameMap: React.FC<GameMapProps> = ({
         timestamp: Date.now(),
       });
     }
-  }, [location, onLocationUpdate, isPlaying]);
+  }, [location, onLocationUpdate, isPlaying, userId, username]);
 
   // Listen for other players' moves
   useEffect(() => {
@@ -107,10 +123,13 @@ export const GameMap: React.FC<GameMapProps> = ({
 
   // Listen for territory-contested events and update territories in real time
   useEffect(() => {
-    function handleTerritoryContested(data: { id: string; owner: string }) {
-      setTerritories((prev: Territory[]) => prev.map((t: Territory) =>
-        t.id === data.id ? { ...t, ownerId: data.owner } : t
-      ));
+    function handleTerritoryContested(data: ContestedTerritoryEvent) {
+      // Replace the whole territory so owner name and color follow the new owner
+      const territory = toTerritory(data);
+      setTerritories(prev => prev.some(t => t.id === territory.id)
+        ? prev.map(t => t.id === territory.id ? territory : t)
+        : [...prev, territory]
+      );
     }
     socket.on('territory-contested', handleTerritoryContested);
     return () => {
@@ -118,11 +137,24 @@ export const GameMap: React.FC<GameMapProps> = ({
     };
   }, [setTerritories]);
 
+  // Add territories claimed by any player (including our own claim, if the HTTP response hasn't added it yet)
+  useEffect(() => {
+    function handleTerritoryClaimed(data: ApiTerritory) {
+      const territory = toTerritory(data);
+      setTerritories(prev => prev.some(t => t.id === territory.id) ? prev : [...prev, territory]);
+    }
+    socket.on('territory-claimed', handleTerritoryClaimed);
+    return () => {
+      socket.off('territory-claimed', handleTerritoryClaimed);
+    };
+  }, [setTerritories]);
+
   // Animate claimed territory
   const [recentlyClaimedId, setRecentlyClaimedId] = useState<string | null>(null);
+  const [isClaiming, setIsClaiming] = useState(false);
 
-  const handleClaimTerritory = () => {
-    if (currentPath.length < 4) return;
+  const handleClaimTerritory = async () => {
+    if (currentPath.length < 4 || isClaiming) return;
     if (!location) {
       showToast('Location not available', 'error');
       return;
@@ -131,29 +163,67 @@ export const GameMap: React.FC<GameMapProps> = ({
       showToast('You must be inside your drawn area to claim!', 'info');
       return;
     }
-    // Optionally: check polygon area, self-intersection, etc.
-    // Call parent claim logic
-    onTerritoryAttempt();
-    // Find new territory (after parent updates state)
-    setTimeout(() => {
-      const latest = territories[territories.length - 1];
-      if (latest) {
-        setRecentlyClaimedId(latest.id);
+    setIsClaiming(true);
+    try {
+      // Parent submits the claim; on failure it surfaces the error in the game overlay
+      const territory = await onTerritoryAttempt();
+      if (territory) {
+        setRecentlyClaimedId(territory.id);
         setTimeout(() => setRecentlyClaimedId(null), 2000);
+        showToast(`Territory claimed! +${territory.points} points`, 'success');
       }
-    }, 100);
-    showToast('Territory claimed!', 'success');
+    } finally {
+      setIsClaiming(false);
+    }
+  };
+
+  const [isContesting, setIsContesting] = useState(false);
+
+  const handleContestTerritory = async (territory: Territory) => {
+    if (!location || isContesting) return;
+    // Speed check (client-side, basic)
+    const now = Date.now();
+    const last = lastMoveRef.current;
+    if (last) {
+      const dist = haversine(last.lat, last.lng, location.lat, location.lng);
+      const dt = (now - last.timestamp) / 1000;
+      const speed = dt > 0 ? dist / dt : 0;
+      if (speed > 15) {
+        showToast('Speed too high, move slower!', 'error');
+        return;
+      }
+    }
+    lastMoveRef.current = { lat: location.lat, lng: location.lng, timestamp: now };
+    setIsContesting(true);
+    try {
+      const result = await onTerritoryContest(territory.id, location.lat, location.lng);
+      if (result.success && result.territory) {
+        setRecentlyClaimedId(result.territory.id);
+        setTimeout(() => setRecentlyClaimedId(null), 2000);
+        showToast(`Territory taken from ${territory.ownerUsername}! +${result.territory.points} points`, 'success');
+      } else {
+        showToast(result.error || 'Failed to contest territory', 'error');
+      }
+    } finally {
+      setIsContesting(false);
+    }
   };
 
   if (error) {
     return (
       <div className={`${className} flex items-center justify-center bg-gray-100`}>
-        <div className="text-center p-6">
-          <div className="text-red-500 text-lg font-semibold mb-2">Location Error</div>
+        <div className="text-center p-6 max-w-sm" role="alert">
+          <div className="w-12 h-12 mx-auto mb-3 rounded-2xl bg-red-100 flex items-center justify-center">
+            <MapPinOff className="w-6 h-6 text-red-600" aria-hidden />
+          </div>
+          <div className="text-gray-900 text-lg font-semibold mb-1">We can't see your location</div>
           <div className="text-gray-600 text-sm">{error}</div>
           <div className="text-xs text-gray-500 mt-2">
-            Please enable location services and refresh the page
+            Conquerun needs location access to track your path. Allow it in your browser's site settings, then try again.
           </div>
+          <button onClick={() => window.location.reload()} className="btn-secondary mt-4 py-2 text-sm">
+            Try again
+          </button>
         </div>
       </div>
     );
@@ -162,74 +232,76 @@ export const GameMap: React.FC<GameMapProps> = ({
   if (isLoading || !location) {
     return (
       <div className={`${className} flex items-center justify-center bg-gray-100`}>
-        <div className="text-center p-6">
+        <div className="text-center p-6" role="status">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mx-auto mb-4"></div>
-          <div className="text-gray-600">Getting your location...</div>
+          <div className="text-gray-700 font-medium">Finding your location...</div>
+          <div className="text-xs text-gray-500 mt-1">Allow location access if your browser asks.</div>
         </div>
       </div>
     );
   }
 
+  // Another player's territory the user is standing in (or within 20m of), if any
+  const contestableTerritory = isPlaying
+    ? territories.find(t => t.ownerId !== userId && isPointNearPolygon(location.lat, location.lng, t.coordinates, 20))
+    : undefined;
+  // Only offer claiming once the loop meets the backend's minimum area
+  const claimEstimate = estimateClaim(currentPath);
+  const canClaim = currentPath.length >= 4 && claimEstimate.area >= MIN_CLAIM_AREA_SQ_METERS;
+
   return (
     <div className={`relative ${className}`}>
       <MapContainer
-        center={mapCenter}
+        center={mapCenter ?? [location.lat, location.lng]}
         zoom={mapZoom}
         className="h-full w-full z-0"
-        ref={mapRef}
         zoomControl={false}
-        attributionControl={false}
       >
         <TileLayer
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-          attribution=""
+          maxZoom={MAX_ZOOM}
+          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
         />
-        
-        <MapUpdater center={mapCenter} zoom={mapZoom} />
+
+        {mapCenter && <MapUpdater center={mapCenter} zoom={mapZoom} />}
         <MapEvents onLocationUpdate={onLocationUpdate} />
 
-        {/* User location */}
+        {/* User location: accuracy halo plus a fixed-size dot that stays visible at any zoom */}
         <Circle
           center={[location.lat, location.lng]}
           radius={location.accuracy || 10}
           fillColor="#3B82F6"
-          fillOpacity={0.2}
+          fillOpacity={0.15}
           color="#3B82F6"
-          weight={2}
+          weight={1}
+          interactive={false}
+        />
+        <CircleMarker
+          center={[location.lat, location.lng]}
+          radius={8}
+          fillColor="#2563EB"
+          fillOpacity={1}
+          color="#FFFFFF"
+          weight={3}
+          interactive={false}
         />
 
         {/* Other players */}
         {otherPlayers.filter(p => p.userId !== userId).map((p) => (
-          <React.Fragment key={p.userId}>
-            <Circle
-              center={[p.lat, p.lng]}
-              radius={12}
-              fillColor="#F59E42"
-              fillOpacity={0.5}
-              color="#F59E42"
-              weight={2}
-            />
-            {/* Username label */}
-            <div
-              style={{
-                position: 'absolute',
-                left: `calc(50% + ${(p.lng - location.lng) * 8000}px)`, // crude projection
-                top: `calc(50% + ${(p.lat - location.lat) * -8000}px)`,
-                pointerEvents: 'none',
-                fontWeight: 600,
-                color: '#F59E42',
-                background: 'rgba(255,255,255,0.8)',
-                borderRadius: 8,
-                padding: '2px 8px',
-                fontSize: 12,
-                zIndex: 1000,
-                transform: 'translate(-50%, -170%)',
-                whiteSpace: 'nowrap',
-              }}
-            >
+          <Circle
+            key={p.userId}
+            center={[p.lat, p.lng]}
+            radius={12}
+            fillColor="#F59E42"
+            fillOpacity={0.5}
+            color="#F59E42"
+            weight={2}
+          >
+            {/* Anchored to the marker, so it stays put when zooming or panning */}
+            <Tooltip permanent direction="top" offset={[0, -8]}>
               {p.username}
-            </div>
-          </React.Fragment>
+            </Tooltip>
+          </Circle>
         ))}
 
         {/* User's current path */}
@@ -245,127 +317,96 @@ export const GameMap: React.FC<GameMapProps> = ({
 
         {/* Claimed territories */}
         {territories.map((territory) => {
-          const isOwner = territory.ownerId === userId;
           const isRecent = territory.id === recentlyClaimedId;
+          const isOwn = territory.ownerId === userId;
           return (
-            <React.Fragment key={territory.id}>
-              <Polygon
-                positions={territory.coordinates}
-                color={territory.color}
-                weight={isRecent ? 6 : 2}
-                fillColor={territory.color}
-                fillOpacity={isRecent ? 0.6 : 0.3}
-                pathOptions={isRecent ? { className: 'animate-pulse-polygon' } : {}}
-              />
-              {/* Contest button for non-owned territories */}
-              {!isOwner && isPlaying && location && isPointNearPolygon(location.lat, location.lng, territory.coordinates, 20) && (
-                <button
-                  className="absolute z-20 bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded-full shadow-lg text-xs font-bold"
-                  style={{ left: '50%', top: '85%', transform: 'translate(-50%, 0)' }}
-                  onClick={async () => {
-                    // Speed check (client-side, basic)
-                    const now = Date.now();
-                    const last = lastMoveRef.current;
-                    let speed = 0;
-                    if (last) {
-                      const dist = haversine(last.lat, last.lng, location.lat, location.lng);
-                      const dt = (now - last.timestamp) / 1000;
-                      speed = dt > 0 ? dist / dt : 0;
-                      if (speed > 15) {
-                        showToast('Speed too high, move slower!', 'error');
-                        return;
-                      }
-                    }
-                    lastMoveRef.current = { lat: location.lat, lng: location.lng, timestamp: now };
-                    try {
-                      const token = localStorage.getItem('token');
-                      const res = await fetch(`/api/territories/${territory.id}/contest`, {
-                        method: 'POST',
-                        headers: {
-                          'Content-Type': 'application/json',
-                          'Authorization': `Bearer ${token}`,
-                        },
-                        body: JSON.stringify({ lat: location.lat, lng: location.lng }),
-                      });
-                      const data = await res.json();
-                      if (!res.ok) {
-                        showToast(data.error || 'Failed to contest territory', 'error');
-                      } else {
-                        showToast('Territory contested!', 'success');
-                      }
-                    } catch (e) {
-                      showToast('Error contesting territory', 'error');
-                    }
-                  }}
-                >
-                  Contest
-                </button>
-              )}
-              {/* If not near, show info toast on click attempt */}
-              {!isOwner && isPlaying && location && !isPointNearPolygon(location.lat, location.lng, territory.coordinates, 20) && (
-                <button
-                  className="absolute z-20 bg-gray-400 text-white px-3 py-1 rounded-full shadow-lg text-xs font-bold opacity-70 cursor-not-allowed"
-                  style={{ left: '50%', top: '85%', transform: 'translate(-50%, 0)' }}
-                  onClick={() => showToast('You must be inside the territory to contest', 'info')}
-                  disabled
-                >
-                  Contest
-                </button>
-              )}
-            </React.Fragment>
+            <Polygon
+              key={territory.id}
+              positions={territory.coordinates}
+              color={territory.color}
+              weight={isRecent ? 6 : isOwn ? 3 : 2}
+              fillColor={territory.color}
+              fillOpacity={isRecent ? 0.6 : 0.3}
+              pathOptions={isRecent ? { className: 'animate-pulse-polygon' } : {}}
+            >
+              {/* Padding keeps the popup clear of the GPS chip (top-left) and map buttons (right) */}
+              <Popup autoPanPaddingTopLeft={[12, 60]} autoPanPaddingBottomRight={[64, 12]}>
+                <div className="w-44">
+                  <div className="font-bold text-gray-900 text-sm">
+                    {isOwn ? 'Your territory' : `${territory.ownerUsername}'s territory`}
+                  </div>
+                  <div className="mt-1 text-xs text-gray-600 space-y-0.5">
+                    <div><span className="font-semibold text-gray-800">{territory.points.toLocaleString()}</span> points</div>
+                    <div>{Math.round(territory.area).toLocaleString()} m²</div>
+                    <div>Claimed {territory.claimedAt.toLocaleDateString()}</div>
+                  </div>
+                  {!isOwn && (
+                    <div className="mt-2 text-xs text-gray-500">Stand inside it during a game to contest it.</div>
+                  )}
+                </div>
+              </Popup>
+            </Polygon>
           );
         })}
       </MapContainer>
 
-      {/* Territory claim button */}
-      {isPlaying && currentPath.length >= 4 && (
-        <button
-          onClick={handleClaimTerritory}
-          className="absolute bottom-20 left-1/2 transform -translate-x-1/2 z-10 bg-orange-500 hover:bg-orange-600 text-white px-6 py-3 rounded-full shadow-lg font-semibold transition-all duration-200 animate-pulse"
-        >
-          Claim Territory
-        </button>
+      {/* Contest and claim buttons, stacked so both stay visible */}
+      {isPlaying && (contestableTerritory || canClaim) && (
+        <div className="absolute bottom-6 left-1/2 transform -translate-x-1/2 z-10 flex flex-col items-center gap-2 w-max max-w-[calc(100%-2rem)]">
+          {contestableTerritory && (
+            <button
+              onClick={() => handleContestTerritory(contestableTerritory)}
+              disabled={isContesting}
+              className="bg-red-600 hover:bg-red-700 disabled:opacity-60 disabled:cursor-wait text-white text-sm px-5 py-2.5 rounded-full shadow-lg font-semibold truncate max-w-full transition-all duration-200 active:scale-95"
+            >
+              {isContesting ? 'Contesting...' : `Contest ${contestableTerritory.ownerUsername}'s Territory`}
+            </button>
+          )}
+          {canClaim && (
+            <button
+              onClick={handleClaimTerritory}
+              disabled={isClaiming}
+              className="bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 disabled:opacity-60 disabled:cursor-wait text-white text-sm px-5 py-2.5 rounded-full shadow-xl ring-4 ring-orange-300/50 font-semibold whitespace-nowrap transition-all duration-200 active:scale-95"
+            >
+              {isClaiming ? 'Claiming...' : `Claim Territory · ~${claimEstimate.points} pts`}
+            </button>
+          )}
+        </div>
       )}
 
       {/* Map controls */}
-      <div className="absolute top-4 right-4 z-10 flex flex-col gap-2">
+      <div className="absolute top-3 right-3 z-10 flex flex-col gap-2">
         <button
-          onClick={() => setMapZoom(prev => Math.min(prev + 1, 18))}
-          className="bg-white shadow-lg rounded-lg p-2 text-gray-700 hover:bg-gray-50 transition-colors"
+          onClick={() => setMapZoom(prev => Math.min(prev + 1, MAX_ZOOM))}
+          className="bg-white shadow-lg rounded-xl w-10 h-10 flex items-center justify-center text-gray-700 hover:bg-gray-50 transition-colors"
+          aria-label="Zoom in"
         >
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-          </svg>
+          <Plus className="w-5 h-5" />
         </button>
         <button
-          onClick={() => setMapZoom(prev => Math.max(prev - 1, 10))}
-          className="bg-white shadow-lg rounded-lg p-2 text-gray-700 hover:bg-gray-50 transition-colors"
+          onClick={() => setMapZoom(prev => Math.max(prev - 1, MIN_ZOOM))}
+          className="bg-white shadow-lg rounded-xl w-10 h-10 flex items-center justify-center text-gray-700 hover:bg-gray-50 transition-colors"
+          aria-label="Zoom out"
         >
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" />
-          </svg>
+          <Minus className="w-5 h-5" />
         </button>
         <button
           onClick={() => {
-            if (location) {
-              setMapCenter([location.lat, location.lng]);
-              setMapZoom(16);
-            }
+            setMapCenter([location.lat, location.lng]);
+            setMapZoom(DEFAULT_ZOOM);
           }}
-          className="bg-white shadow-lg rounded-lg p-2 text-gray-700 hover:bg-gray-50 transition-colors"
+          className="bg-white shadow-lg rounded-xl w-10 h-10 flex items-center justify-center text-blue-600 hover:bg-gray-50 transition-colors"
+          aria-label="Center map on my location"
         >
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-          </svg>
+          <LocateFixed className="w-5 h-5" />
         </button>
       </div>
 
       {/* Location accuracy indicator */}
-      <div className="absolute top-4 left-4 z-10 bg-white shadow-lg rounded-lg px-3 py-2 text-xs">
+      <div className="absolute top-3 left-3 z-10 bg-white shadow-lg rounded-xl px-3 py-2 text-xs" title="GPS accuracy">
         <div className="flex items-center gap-2">
-          <div className={`w-2 h-2 rounded-full ${location.accuracy < 10 ? 'bg-green-500' : location.accuracy < 50 ? 'bg-yellow-500' : 'bg-red-500'}`}></div>
-          <span className="text-gray-600">±{Math.round(location.accuracy)}m</span>
+          <div className={`w-2 h-2 rounded-full ${location.accuracy < 10 ? 'bg-green-500' : location.accuracy < 50 ? 'bg-yellow-500' : 'bg-red-500'}`} aria-hidden></div>
+          <span className="text-gray-700 font-medium">GPS ±{Math.round(location.accuracy)} m</span>
         </div>
       </div>
     </div>

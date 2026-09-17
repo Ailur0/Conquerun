@@ -33,7 +33,7 @@ export const GameModeSelector: React.FC<GameModeSelectorProps> = ({
     {
       id: 'team-mode' as GameMode,
       name: 'Team Mode',
-      description: 'Collaborate with friends (Coming Soon)',
+      description: 'Collaborate with friends',
       icon: Users,
       color: 'green',
       disabled: true,
@@ -71,23 +71,25 @@ export const GameModeSelector: React.FC<GameModeSelectorProps> = ({
         <p className="text-gray-600 text-sm">Select a game mode to start conquering territories</p>
       </div>
       
-      <div className="space-y-4">
+      <div className="space-y-3" role="radiogroup" aria-label="Game mode">
         {modes.map((mode, index) => {
           const Icon = mode.icon;
           const isSelected = selectedMode === mode.id;
           const colors = getColorClasses(mode.color, isSelected);
-          
+
           return (
             <button
               key={mode.id}
+              role="radio"
+              aria-checked={isSelected}
               onClick={() => !mode.disabled && onModeChange(mode.id)}
               disabled={mode.disabled}
-              className={`w-full p-5 rounded-2xl text-left transition-all duration-300 transform hover:scale-[1.02] ${
+              className={`w-full p-4 rounded-2xl text-left transition-all duration-300 ${
                 colors.bg
               } border-2 ${colors.border} ${
-                mode.disabled 
-                  ? 'opacity-50 cursor-not-allowed' 
-                  : 'cursor-pointer hover:shadow-lg active:scale-[0.98]'
+                mode.disabled
+                  ? 'opacity-50 cursor-not-allowed'
+                  : 'cursor-pointer hover:shadow-md active:scale-[0.98]'
               }`}
               style={{ animationDelay: `${index * 0.1}s` }}
             >
@@ -96,10 +98,10 @@ export const GameModeSelector: React.FC<GameModeSelectorProps> = ({
                   <Icon className="w-6 h-6 text-white" />
                 </div>
                 <div className="flex-1">
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="font-bold text-gray-900">{mode.name}</span>
+                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mb-1">
+                    <span className="font-bold text-gray-900 whitespace-nowrap">{mode.name}</span>
                     {mode.disabled && (
-                      <span className="text-xs bg-gray-200 text-gray-600 px-2 py-1 rounded-full">
+                      <span className="text-xs bg-gray-200 text-gray-600 px-2 py-0.5 rounded-full whitespace-nowrap">
                         Coming Soon
                       </span>
                     )}
@@ -121,15 +123,15 @@ export const GameModeSelector: React.FC<GameModeSelectorProps> = ({
         })}
       </div>
 
-      <div className="mt-8 space-y-3">
+      <div className="mt-6 space-y-3">
         <button
           onClick={onStartGame}
           className="btn-primary w-full text-lg py-4"
         >
-          🎮 Start Adventure
+          🎮 Start {modes.find(m => m.id === selectedMode)?.name}
         </button>
         <p className="text-xs text-gray-500 text-center">
-          Walk around to create paths and claim territories
+          Walk a loop around an area, then claim it. Bigger loops earn more points.
         </p>
       </div>
     </div>

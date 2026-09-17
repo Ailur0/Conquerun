@@ -1,54 +1,46 @@
-import { Territory, LocationUpdate, GameSession } from '../types';
-import { calculatePolygonArea, calculateSpeed, isValidPolygon, checkPolygonIntersection, generateUserColor } from '../utils/geospatial';
+import { Territory, LocationUpdate, GameSession, GameMode } from '../types';
+import { calculateSpeed, generateUserColor } from '../utils/geospatial';
+import { API_URL, authService } from './authService';
+
+// Territory as returned by the backend (and the `territory-claimed` socket event)
+export interface ApiTerritory {
+  id: string;
+  ownerId: string;
+  ownerUsername: string;
+  polygon: { type: 'Polygon'; coordinates: [number, number][][] }; // GeoJSON [lng, lat]
+  area: number;
+  points: number;
+  gameMode: GameMode;
+  claimedAt: string;
+}
+
+// Payload of the `territory-contested` socket event
+export interface ContestedTerritoryEvent extends ApiTerritory {
+  previousOwnerId: string;
+}
+
+// A player's totals after the backend applied a claim or contest
+export interface UserTotals {
+  totalPoints: number;
+  claimedTerritories: number;
+}
+
+export const toTerritory = (t: ApiTerritory): Territory => ({
+  id: t.id,
+  ownerId: t.ownerId,
+  ownerUsername: t.ownerUsername,
+  coordinates: t.polygon.coordinates[0].map(([lng, lat]) => [lat, lng]),
+  area: t.area,
+  points: t.points,
+  color: generateUserColor(t.ownerId),
+  claimedAt: new Date(t.claimedAt),
+  gameMode: t.gameMode
+});
 
 class GameService {
-  private territories: Territory[] = [];
-  
   private currentSession: GameSession | null = null;
   private lastLocation: LocationUpdate | null = null;
   private currentPath: [number, number][] = [];
-
-  // Mock data for demo
-  private mockTerritories: Territory[] = [
-    {
-      id: '1',
-      ownerId: 'user2',
-      ownerUsername: 'Explorer',
-      coordinates: [
-        [40.7829, -73.9654],
-        [40.7839, -73.9654],
-        [40.7839, -73.9644],
-        [40.7829, -73.9644],
-        [40.7829, -73.9654]
-      ],
-      area: 12000,
-      points: 120,
-      color: '#EF4444',
-      claimedAt: new Date(),
-      gameMode: 'free-play'
-    },
-    {
-      id: '2',
-      ownerId: 'user3',
-      ownerUsername: 'Conqueror',
-      coordinates: [
-        [40.7819, -73.9664],
-        [40.7829, -73.9664],
-        [40.7829, -73.9674],
-        [40.7819, -73.9674],
-        [40.7819, -73.9664]
-      ],
-      area: 15000,
-      points: 150,
-      color: '#10B981',
-      claimedAt: new Date(),
-      gameMode: 'free-play'
-    }
-  ];
-
-  constructor() {
-    this.territories = [...this.mockTerritories];
-  }
 
   startSession(userId: string, mode: 'free-play' | 'timed-challenge' | 'team-mode'): GameSession {
     this.currentSession = {
@@ -132,78 +124,99 @@ class GameService {
     return R * c;
   }
 
-  attemptTerritoryClaimByClosure(userId: string, username: string): {
+  async fetchTerritories(): Promise<Territory[]> {
+    try {
+      const response = await fetch(`${API_URL}/territories`);
+      if (!response.ok) return [];
+      const data: { territories: ApiTerritory[] } = await response.json();
+      return data.territories.map(toTerritory);
+    } catch (error) {
+      console.error('Failed to fetch territories:', error);
+      return [];
+    }
+  }
+
+  // Submits the current path as a closed polygon; the backend validates it, scores it and updates the user's stats
+  async attemptTerritoryClaimByClosure(): Promise<{
     success: boolean;
     territory?: Territory;
     points?: number;
+    user?: UserTotals;
     error?: string;
-  } {
+  }> {
     if (this.currentPath.length < 4) {
-      return { 
-        success: false, 
-        error: 'Path too short. Walk more to create a larger territory.' 
+      return {
+        success: false,
+        error: 'Path too short. Walk more to create a larger territory.'
       };
     }
 
-    // Close the polygon
-    const closedPath = [...this.currentPath];
-    if (closedPath[0][0] !== closedPath[closedPath.length - 1][0] || 
-        closedPath[0][1] !== closedPath[closedPath.length - 1][1]) {
-      closedPath.push(closedPath[0]);
+    // Close the loop and convert [lat, lng] to GeoJSON [lng, lat]
+    const ring = this.currentPath.map(([lat, lng]) => [lng, lat]);
+    const [first, last] = [ring[0], ring[ring.length - 1]];
+    if (first[0] !== last[0] || first[1] !== last[1]) {
+      ring.push(first);
     }
 
-    if (!isValidPolygon(closedPath)) {
-      return { 
-        success: false, 
-        error: 'Invalid territory shape. Try creating a closed loop.' 
-      };
-    }
-
-    // Check for intersections with existing territories
-    for (const territory of this.territories) {
-      if (checkPolygonIntersection(closedPath, territory.coordinates)) {
-        return { 
-          success: false, 
-          error: 'Territory overlaps with existing claimed area.' 
-        };
+    try {
+      const response = await fetch(`${API_URL}/territories`, {
+        method: 'POST',
+        headers: authService.getAuthHeaders(),
+        body: JSON.stringify({
+          polygon: { type: 'Polygon', coordinates: [ring] },
+          gameMode: this.currentSession?.mode || 'free-play'
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        return { success: false, error: data.error || 'Failed to claim territory' };
       }
+
+      const territory = toTerritory(data.territory);
+
+      if (this.currentSession) {
+        this.currentSession.score += territory.points;
+        this.currentSession.territoriesClaimed++;
+      }
+      this.currentPath = [];
+
+      return { success: true, territory, points: territory.points, user: data.user };
+    } catch (error) {
+      console.error('Failed to claim territory:', error);
+      return { success: false, error: 'Network error while claiming territory.' };
     }
+  }
 
-    const area = calculatePolygonArea(closedPath);
-    const points = Math.floor(area / 100); // 1 point per 100 sq meters
+  // Takes over another player's territory; the backend checks the player is inside it and moves its points
+  async contestTerritory(territoryId: string, lat: number, lng: number): Promise<{
+    success: boolean;
+    territory?: Territory;
+    user?: UserTotals;
+    error?: string;
+  }> {
+    try {
+      const response = await fetch(`${API_URL}/territories/${territoryId}/contest`, {
+        method: 'POST',
+        headers: authService.getAuthHeaders(),
+        body: JSON.stringify({ lat, lng }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        return { success: false, error: data.error || 'Failed to contest territory' };
+      }
 
-    // Minimum area requirement
-    if (area < 1000) {
-      return { 
-        success: false, 
-        error: 'Territory too small. Minimum area: 1000 sq meters.' 
-      };
+      const territory = toTerritory(data.territory);
+
+      if (this.currentSession) {
+        this.currentSession.score += territory.points;
+        this.currentSession.territoriesClaimed++;
+      }
+
+      return { success: true, territory, user: data.user };
+    } catch (error) {
+      console.error('Failed to contest territory:', error);
+      return { success: false, error: 'Network error while contesting territory.' };
     }
-
-    const territory: Territory = {
-      id: `territory_${Date.now()}`,
-      ownerId: userId,
-      ownerUsername: username,
-      coordinates: closedPath,
-      area,
-      points,
-      color: generateUserColor(userId),
-      claimedAt: new Date(),
-      gameMode: this.currentSession?.mode || 'free-play'
-    };
-
-    this.territories.push(territory);
-    
-    // Update session
-    if (this.currentSession) {
-      this.currentSession.score += points;
-      this.currentSession.territoriesClaimed++;
-    }
-
-    // Reset current path
-    this.currentPath = [];
-
-    return { success: true, territory, points };
   }
 
   clearCurrentPath(): void {
@@ -214,43 +227,8 @@ class GameService {
     return [...this.currentPath];
   }
 
-  getTerritories(): Territory[] {
-    return [...this.territories];
-  }
-
-  getTerritoriesInBounds(bounds: {
-    north: number;
-    south: number;
-    east: number;
-    west: number;
-  }): Territory[] {
-    return this.territories.filter(territory => {
-      return territory.coordinates.some(([lat, lng]) =>
-        lat >= bounds.south && lat <= bounds.north &&
-        lng >= bounds.west && lng <= bounds.east
-      );
-    });
-  }
-
   getCurrentSession(): GameSession | null {
     return this.currentSession;
-  }
-
-  getUserTerritories(userId: string): Territory[] {
-    return this.territories.filter(t => t.ownerId === userId);
-  }
-
-  getUserStats(userId: string): {
-    totalPoints: number;
-    territoriesCount: number;
-    totalArea: number;
-  } {
-    const userTerritories = this.getUserTerritories(userId);
-    return {
-      totalPoints: userTerritories.reduce((sum, t) => sum + t.points, 0),
-      territoriesCount: userTerritories.length,
-      totalArea: userTerritories.reduce((sum, t) => sum + t.area, 0)
-    };
   }
 }
 

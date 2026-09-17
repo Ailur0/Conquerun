@@ -1,6 +1,6 @@
 import { User } from '../types';
 
-const API_URL = 'http://localhost:5000/api';
+export const API_URL = 'http://localhost:5000/api';
 
 class AuthService {
   private currentUser: User | null = null;
@@ -12,7 +12,7 @@ class AuthService {
     }
   }
 
-  private getAuthHeaders() {
+  getAuthHeaders() {
     const token = localStorage.getItem('conquerun_token');
     return {
       'Content-Type': 'application/json',
@@ -111,19 +111,14 @@ class AuthService {
       });
       if (!response.ok) return [];
       const data = await response.json();
-if (Array.isArray(data)) return data;
-if (data && Array.isArray(data.leaderboard)) return data.leaderboard;
-return [];
+      const entries: (User & { _id?: string })[] = Array.isArray(data) ? data : data?.leaderboard ?? [];
+      // The API returns Mongo's `_id`; the UI matches players by `id`
+      return entries.map(({ _id, ...user }) => ({ ...user, id: user.id ?? _id ?? '' }));
     } catch (error) {
       return [];
     }
   }
   
-  updateUserStats(points: number, territories: number): void {
-    // This should be a POST request to a backend endpoint like /api/users/me/stats
-    console.log('Updating stats:', { points, territories });
-  }
-
   public async updateUserProfile(username: string): Promise<{ success: boolean; error?: string; user?: User }> {
     try {
       const token = localStorage.getItem('conquerun_token');

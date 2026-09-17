@@ -29,8 +29,6 @@
     -moz-osx-font-smoothing: grayscale;
   }
   
-  *
-  
   button:focus-visible {
     @apply outline-none ring-2 ring-blue-500 ring-offset-2;
   }
@@ -199,20 +197,8 @@
 
 /* Mobile-first responsive design improvements */
 @media (max-width: 640px) {
-  .card-elevated {
-    @apply mx-2 rounded-xl;
-  }
-  
   .btn-primary, .btn-secondary, .btn-danger {
     @apply py-4 text-base;
-  }
-}
-
-/* Dark mode support (future-ready) */
-@media (prefers-color-scheme: dark) {
-  :root {
-    --glass-bg: rgba(0, 0, 0, 0.8);
-    --glass-border: rgba(255, 255, 255, 0.1);
   }
 }
 

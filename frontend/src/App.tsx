@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { GameMap } from './components/Map/GameMap';
 import { AuthModal } from './components/Auth/AuthModal';
 import { GameStats } from './components/UI/GameStats';
@@ -7,19 +7,22 @@ import { GameOverlay } from './components/UI/GameOverlay';
 import { Leaderboard } from './components/UI/Leaderboard';
 import { Navigation } from './components/UI/Navigation';
 import { authService } from './services/authService';
-import { gameService } from './services/gameService';
+import { gameService, ContestedTerritoryEvent } from './services/gameService';
+import { socket } from './services/socket';
 import { User, GameMode, Territory, GameSession } from './types';
 import Header from './components/UI/Header';
 import { SettingsPage } from './pages/SettingsPage';
-import { ToastProvider } from './components/UI/Toast';
+import { ToastProvider, useToast } from './components/UI/Toast';
 
 function App() {
+  const { showToast } = useToast();
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [activeTab, setActiveTab] = useState<'game' | 'leaderboard'>('game');
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [isLoadingApp, setIsLoadingApp] = useState(true);
   const [leaderboardData, setLeaderboardData] = useState<User[]>([]);
+  const [isLeaderboardLoading, setIsLeaderboardLoading] = useState(false);
   
   // Game state
   const [selectedMode, setSelectedMode] = useState<GameMode>('free-play');
@@ -43,7 +46,7 @@ function App() {
           setShowAuthModal(true);
         }
         // Load existing territories
-        setTerritories(gameService.getTerritories());
+        setTerritories(await gameService.fetchTerritories());
       } catch (error) {
         console.error("Failed to initialize app:", error);
         setShowAuthModal(true);
@@ -78,21 +81,27 @@ function App() {
     setGameError('');
   };
 
-  const handleEndGame = () => {
+  const handleEndGame = (reason?: 'time-up') => {
     const endedSession = gameService.endSession();
     setCurrentSession(null);
     setIsPlaying(false);
     setCurrentPath([]);
+    setGameError('');
+    setSpeedWarning(false);
     gameService.clearCurrentPath();
-    
-    if (endedSession && currentUser) {
-      // Update user stats
-      const userTerritories = gameService.getUserTerritories(currentUser.id);
-      const totalPoints = userTerritories.reduce((sum, t) => sum + t.points, 0);
-      
-      authService.updateUserStats(totalPoints - currentUser.totalPoints, userTerritories.length - currentUser.claimedTerritories);
-      setCurrentUser(authService.getCurrentUser());
+
+    if (endedSession) {
+      const claimed = endedSession.territoriesClaimed;
+      const summary = claimed > 0
+        ? `+${endedSession.score.toLocaleString()} points from ${claimed} ${claimed === 1 ? 'territory' : 'territories'}`
+        : 'No territories claimed this time';
+      showToast(`${reason === 'time-up' ? "Time's up!" : 'Game over.'} ${summary}.`, claimed > 0 ? 'success' : 'info');
     }
+  };
+
+  const handleDismissGameError = () => {
+    setGameError('');
+    setSpeedWarning(false);
   };
 
   const handleTogglePlay = () => {
@@ -129,41 +138,74 @@ function App() {
     }
   };
 
-  const handleTerritoryAttempt = () => {
-    if (!currentUser) return;
+  const handleTerritoryAttempt = async (): Promise<Territory | null> => {
+    if (!currentUser) return null;
 
-    const result = gameService.attemptTerritoryClaimByClosure(currentUser.id, currentUser.username);
-    
+    const result = await gameService.attemptTerritoryClaimByClosure();
+
     if (result.success && result.territory) {
-      setTerritories(gameService.getTerritories());
+      const territory = result.territory;
+      // The territory-claimed socket event may have already added it
+      setTerritories(prev => prev.some(t => t.id === territory.id) ? prev : [...prev, territory]);
       setCurrentPath([]);
-      
-      // Show success message (could be a toast notification)
-      alert(`Territory claimed! You earned ${result.points} points!`);
-      
-      // Update user stats
-      if (currentUser) {
-        const updatedUser = { ...currentUser };
-        updatedUser.totalPoints += result.points!;
-        updatedUser.claimedTerritories += 1;
-        setCurrentUser(updatedUser);
-        authService.updateUserStats(result.points!, 1);
+      setGameError('');
+
+      // Stats were updated server-side; mirror the returned totals
+      if (result.user) {
+        const { totalPoints, claimedTerritories } = result.user;
+        setCurrentUser(prev => prev && { ...prev, totalPoints, claimedTerritories });
       }
-    } else {
-      setGameError(result.error || 'Failed to claim territory');
+      return territory;
     }
+
+    setGameError(result.error || 'Failed to claim territory');
+    return null;
   };
 
-  useEffect(() => {
-    const fetchLeaderboard = async () => {
-      if (activeTab === 'leaderboard' && currentUser) {
-        const users = await authService.getLeaderboard();
-        setLeaderboardData(users);
-      }
-    };
+  const handleTerritoryContest = async (territoryId: string, lat: number, lng: number) => {
+    const result = await gameService.contestTerritory(territoryId, lat, lng);
 
-    fetchLeaderboard();
-  }, [activeTab, currentUser]);
+    if (result.success && result.territory) {
+      const territory = result.territory;
+      setTerritories(prev => prev.map(t => t.id === territory.id ? territory : t));
+      if (result.user) {
+        const { totalPoints, claimedTerritories } = result.user;
+        setCurrentUser(prev => prev && { ...prev, totalPoints, claimedTerritories });
+      }
+    }
+    return result;
+  };
+
+  // When another player takes one of our territories, its points leave our totals
+  const currentUserId = currentUser?.id;
+  useEffect(() => {
+    if (!currentUserId) return;
+    function handleTerritoryContested(data: ContestedTerritoryEvent) {
+      if (data.previousOwnerId !== currentUserId) return;
+      setCurrentUser(prev => prev && {
+        ...prev,
+        totalPoints: prev.totalPoints - data.points,
+        claimedTerritories: prev.claimedTerritories - 1,
+      });
+    }
+    socket.on('territory-contested', handleTerritoryContested);
+    return () => {
+      socket.off('territory-contested', handleTerritoryContested);
+    };
+  }, [currentUserId]);
+
+  const loadLeaderboard = useCallback(async () => {
+    setIsLeaderboardLoading(true);
+    const users = await authService.getLeaderboard();
+    setLeaderboardData(users);
+    setIsLeaderboardLoading(false);
+  }, []);
+
+  useEffect(() => {
+    if (activeTab === 'leaderboard' && currentUserId) {
+      loadLeaderboard();
+    }
+  }, [activeTab, currentUserId, loadLeaderboard]);
 
   const handleUpdateUser = async (username: string) => {
     if (!currentUser) return { success: false, error: 'User not found' };
@@ -205,40 +247,41 @@ function App() {
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-50 via-purple-50 to-pink-50 flex items-center justify-center p-4">
         <div className="text-center p-8 max-w-md mx-auto fade-in">
-          <div className="relative mb-8">
-            <div className="w-24 h-24 mx-auto bg-gradient-to-br from-blue-500 to-purple-600 rounded-3xl flex items-center justify-center text-4xl text-white shadow-2xl bounce-in">
+          <div className="relative mb-8 w-24 h-24 mx-auto">
+            {/* Ring sits behind the logo so it doesn't wash it out */}
+            <div className="absolute inset-0 bg-gradient-to-br from-blue-500 to-purple-600 rounded-3xl opacity-20 pulse-ring" aria-hidden></div>
+            <div className="relative w-24 h-24 bg-gradient-to-br from-blue-500 to-purple-600 rounded-3xl flex items-center justify-center text-4xl text-white shadow-2xl bounce-in" aria-hidden>
               🗺️
             </div>
-            <div className="absolute inset-0 w-24 h-24 mx-auto bg-gradient-to-br from-blue-500 to-purple-600 rounded-3xl opacity-20 pulse-ring"></div>
           </div>
-          <h1 className="text-5xl font-bold text-gray-900 mb-4 text-shadow-lg">Conquerun</h1>
-          <p className="text-lg text-gray-600 mb-8 leading-relaxed">Claim territories by walking in the real world and compete with players globally</p>
-          <div className="space-y-4">
+          <h1 className="text-5xl font-bold text-gray-900 mb-4">Conquerun</h1>
+          <p className="text-lg text-gray-600 mb-8 leading-relaxed">Walk loops in the real world to claim territory on the map, then defend it from other players.</p>
+          <div className="space-y-5">
             <button
               onClick={() => setShowAuthModal(true)}
               className="btn-primary w-full text-lg"
             >
               🚀 Get Started
             </button>
-            <div className="flex items-center justify-center space-x-6 text-sm text-gray-500">
-              <div className="flex items-center space-x-2">
-                <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                <span>Real-time</span>
-              </div>
-              <div className="flex items-center space-x-2">
-                <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
-                <span>Multiplayer</span>
-              </div>
-              <div className="flex items-center space-x-2">
-                <div className="w-2 h-2 bg-purple-500 rounded-full"></div>
-                <span>Location-based</span>
-              </div>
-            </div>
+            <ul className="flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-sm text-gray-600">
+              <li className="flex items-center gap-2 whitespace-nowrap">
+                <span className="w-2 h-2 bg-green-500 rounded-full" aria-hidden></span>
+                Real-time
+              </li>
+              <li className="flex items-center gap-2 whitespace-nowrap">
+                <span className="w-2 h-2 bg-blue-500 rounded-full" aria-hidden></span>
+                Multiplayer
+              </li>
+              <li className="flex items-center gap-2 whitespace-nowrap">
+                <span className="w-2 h-2 bg-purple-500 rounded-full" aria-hidden></span>
+                Location-based
+              </li>
+            </ul>
           </div>
         </div>
         <AuthModal
           isOpen={showAuthModal}
-          onClose={() => {}}
+          onClose={() => setShowAuthModal(false)}
           onAuth={handleAuth}
         />
       </div>
@@ -257,11 +300,13 @@ function App() {
              {/* Game Map - Top part */}
              <div className="h-[45vh]">
                <GameMap
+                 currentUser={currentUser}
                  territories={territories}
                  setTerritories={setTerritories}
                  currentPath={currentPath}
                  onLocationUpdate={handleLocationUpdate}
                  onTerritoryAttempt={handleTerritoryAttempt}
+                 onTerritoryContest={handleTerritoryContest}
                  isPlaying={isPlaying}
                  className="h-full"
                />
@@ -269,6 +314,7 @@ function App() {
 
              {/* Game UI - Bottom part */}
              <div className="flex-1 p-4 bg-gradient-to-t from-gray-100 to-gray-50 overflow-y-auto">
+              <div className="mx-auto w-full max-w-2xl">
                <GameStats user={currentUser} session={currentSession} className="mb-4" />
                
                {!currentSession && (
@@ -285,18 +331,26 @@ function App() {
                    isPlaying={isPlaying}
                    onTogglePlay={handleTogglePlay}
                    onEndGame={handleEndGame}
-                   currentPathLength={currentPath.length}
+                   currentPath={currentPath}
                    speedWarning={speedWarning}
                    error={gameError}
+                   onDismissError={handleDismissGameError}
                  />
                )}
+              </div>
              </div>
            </div>
         )}
 
         {activeTab === 'leaderboard' && (
           <div className="flex-1 p-4 fade-in">
-            <Leaderboard users={leaderboardData} currentUser={currentUser} />
+            <Leaderboard
+              users={leaderboardData}
+              currentUser={currentUser}
+              isLoading={isLeaderboardLoading}
+              onRefresh={loadLeaderboard}
+              className="mx-auto w-full max-w-2xl"
+            />
           </div>
         )}
       </main>

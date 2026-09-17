@@ -30,16 +30,18 @@ export const ToastProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   return (
     <ToastContext.Provider value={{ showToast }}>
       {children}
-      <div className="fixed bottom-8 left-1/2 transform -translate-x-1/2 z-50 flex flex-col gap-2 items-center">
+      {/* Sits above the bottom navigation bar */}
+      <div className="fixed bottom-[calc(6.5rem+env(safe-area-inset-bottom))] left-1/2 transform -translate-x-1/2 z-50 flex flex-col gap-2 items-center w-max max-w-[calc(100vw-2rem)] pointer-events-none">
         {toasts.map((toast) => (
           <div
             key={toast.id}
-            className={`relative px-6 py-3 rounded-lg shadow-lg text-white font-semibold animate-fade-in-up ${toast.fading ? 'animate-fade-out-down' : ''} ${toast.type === 'success' ? 'bg-green-500' : toast.type === 'error' ? 'bg-red-500' : 'bg-blue-500'}`}
+            role={toast.type === 'error' ? 'alert' : 'status'}
+            className={`relative pl-5 pr-10 py-3 rounded-xl shadow-lg text-white font-semibold text-sm leading-snug pointer-events-auto animate-fade-in-up ${toast.fading ? 'animate-fade-out-down' : ''} ${toast.type === 'success' ? 'bg-green-600' : toast.type === 'error' ? 'bg-red-600' : 'bg-blue-600'}`}
             style={{ minWidth: 200 }}
           >
             {toast.message}
             <button
-              className="absolute top-1 right-2 text-white text-lg font-bold opacity-60 hover:opacity-100 focus:outline-none"
+              className="absolute top-1/2 -translate-y-1/2 right-2 w-7 h-7 flex items-center justify-center rounded-full text-white text-lg font-bold opacity-70 hover:opacity-100 hover:bg-white/10"
               aria-label="Dismiss notification"
               onClick={() => {
                 setToasts((prev) =>
